@@ -42,7 +42,7 @@ git clone https://github.com/fzyvvrmy-blip/SRT.git
 cd SRT
 ```
 
-> clone 不下来通常是没被加进仓库成员，找组长加一下协作者权限。
+> clone 不下来通常是没被加进仓库成员，找有权限的人把你加为协作者。
 
 ---
 
@@ -111,7 +111,7 @@ python app.py
 
 ## 六、每次新版本怎么同步
 
-组长每次 push 新版本后，你只需在项目根目录（`SRT/`）执行：
+每次 push 新版本后，你只需在项目根目录（`SRT/`）执行：
 
 ```bash
 git pull
