@@ -1,0 +1,33 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>KONIPONI · 日语学习平台</title>
+    <!-- Google Fonts with local fallback timeout -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,600;0,700;1,700&family=Zen+Maru+Gothic:wght@400;500;700&display=swap" media="print" onload="this.media='all'">
+    <style>
+      /* 离线字体回退 */
+      @font-face {
+        font-family: 'Playfair Display';
+        src: local('Georgia'), local('Times New Roman');
+        font-style: normal;
+        font-weight: 700;
+      }
+      /* 确保有字体时立即可用 */
+      :root {
+        --font-display: 'Playfair Display', Georgia, 'Times New Roman', serif;
+        --font-body: 'Zen Maru Gothic', 'Microsoft YaHei', 'PingFang SC', sans-serif;
+        --font-mono: 'DM Mono', 'Courier New', monospace;
+      }
+    </style>
+    <link rel="stylesheet" href="styles.css" />
+    <link rel="stylesheet" href="extra.css" />
+  </head>
+  <body>
+    <div id="app"></div>
+    <script src="app.js"></script>
+    <script src="extra.js"></script>
+  </body>
+</html>
