@@ -76,7 +76,7 @@ PGHOST=8.130.188.157        # 数据库服务器地址（固定）
 PGPORT=5432                 # 端口（固定）
 PGDATABASE=koniponi         # 库名（固定）
 PGUSER=koniponi             # 账号（固定）
-PGPASSWORD=在这里填密码       # ← 密码，找组长要
+PGPASSWORD=在这里填密码       # ← 密码，自己填
 ```
 
 | 字段 | 含义 | 一般填什么 |
@@ -85,9 +85,9 @@ PGPASSWORD=在这里填密码       # ← 密码，找组长要
 | PGPORT | 端口 | `5432`（固定） |
 | PGDATABASE | 库名 | `koniponi`（固定） |
 | PGUSER | 数据库账号 | `koniponi`（固定） |
-| PGPASSWORD | 数据库密码 | **找组长要** |
+| PGPASSWORD | 数据库密码 | 自己填 |
 
-> ⚠️ `PGPASSWORD` 是密码，**找组长单独要，不要发群里，也不要提交到 git**。
+> ⚠️ `PGPASSWORD` 是密码，**自己填，不要提交到 git**（以后上传时也一样）。
 > `.env` 已被 `.gitignore` 忽略，正常 pull/push 都不会传上去，放心。
 
 ---
