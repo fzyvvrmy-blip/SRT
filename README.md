@@ -15,7 +15,7 @@ SRT/
 │   ├─ index.html
 │   ├─ app.js / extra.js    页面逻辑
 │   ├─ styles.css / extra.css
-│   └─ assets/              图片素材
+│   └─ assets/              UI图片素材
 └─ backend/                 Python 后端（托管前端 + 提供 API）
     ├─ app.py               唯一入口
     ├─ config.py            读 .env 拿数据库连接信息
@@ -41,8 +41,6 @@ SRT/
 git clone https://github.com/fzyvvrmy-blip/SRT.git
 cd SRT
 ```
-
-> clone 不下来通常是没被加进仓库成员，找有权限的人把你加为协作者。
 
 ---
 
