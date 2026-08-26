@@ -1,4 +1,23 @@
-const A=document.querySelector('#app'),S={p:'home',g:'大一',t:'kana',q:'',fav:new Set(),modal:false,pro:'words',n:1,a:'',show:true,usermenu:false};
+const A=document.querySelector('#app'),S={p:'home',g:'大一',t:'kana',q:'',profileQ:'',fav:new Set(),modal:false,pro:'words',n:1,a:'',show:true,usermenu:false,mBook:'',mFromL:1,mFromU:1,mToL:15,mToU:3,mScope:'fav',mQty:'20',mCustom:'',mMode:'kanji2kana',mTotalCount:null,mName:''};
+const BOOK_MAX={'综日一':[15,3],'综日二':[15,3],'综日三':[10,2],'综日四':[10,2]};
+const BOOK_NUM={'综日一':1,'综日二':2,'综日三':3,'综日四':4};
+
+/* 题型定义（与后端 MODES 保持一致） */
+const MODES={
+  kanji2kana:    '看汉字　写假名',
+  kana2kanji:    '看假名　写汉字',
+  word2meaning:  '看单词　写释义',
+  word2accent:   '看单词　写音调',
+  gairaigo_jp2cn:'外来语（日译中）',
+  gairaigo_cn2jp:'外来语（中译日）',
+};
+
+/* 当前用户 id（硬编码，未来登录后替换） */
+const UID = '001';
+
+/* 抽查会话状态 */
+let QZ = null;   // {sessionId, questions, mode, modeLabel, qIdx, answers, submitted, result}
+
 let W=[],W_BOOK=3,W_LOADING=false;
 let PAGE=1,KANA_SEL='あ';              // 分页 + 假名段
 let BK={lesson:'',unit:'',type:'新出'};    // 课本筛选（课/单元/新出·练习）
@@ -16,6 +35,7 @@ async function loadWords(order,book){
   try{
     const data=await (await fetch(`/api/words?order=${order}&book=${W_BOOK}`)).json();
     W=data.words.map(w=>({
+      id:w.id,
       word:w.word, pron:w.pron||'', accent:w.accent||'', pos:w.pos||'', meaning:w.meaning||'',
       source:`第${w.lesson||'-'}课·Unit${w.unit||'-'}${w.source_type?'·'+w.source_type:''}`,
       kana:w.kana||'', lesson:w.lesson, unit:w.unit, type:w.source_type||''
@@ -27,6 +47,7 @@ function switchTab(t){
   S.t=t; PAGE=1;
   if(t==='kana')loadWords('kana',3);
   else if(t==='book')loadWords('book',W_BOOK);
+  else if(t==='test'){ QZ=null; draw(); }
   else draw();
 }
 
@@ -414,6 +435,7 @@ function restoreFocus(){
 function rows(list,src=true,del=false,showFavMark=false){
   return list.map((w,i)=>{
     const k=w.word;
+    const isFav = S.fav.has(k);
     return `<tr id="w${i}">
       <td><b>${w.word}</b></td>
       <td>${w.pron}</td>
@@ -421,9 +443,59 @@ function rows(list,src=true,del=false,showFavMark=false){
       <td>${w.pos}</td>
       <td>${w.meaning}</td>
       ${src?`<td><a>${w.source}${showFavMark?' <mark>#收藏</mark>':''}</a></td>`:''}
-      <td><button class="pill ${S.fav.has(k)?'saved':''}" onclick="${del?`W=W.filter(x=>x.word!=='${k}');draw()`:`S.fav.has('${k}')?S.fav.delete('${k}'):S.fav.add('${k}');draw()`}">${del?'删除':S.fav.has(k)?'已收藏':'收藏'}</button></td>
+      <td><button class="pill ${isFav?'saved':''}" onclick="toggleFav(${w.id},'${k}')">${isFav?'已收藏':'收藏'}</button></td>
     </tr>`;
   }).join('');
+}
+
+/* 收藏 / 取消收藏（接入真实 API） */
+function toggleFav(wordId, wordKey){
+  const isFav = S.fav.has(wordKey);
+  const action = isFav ? 'remove' : 'add';
+  // 本地立即响应：更新收藏 Set
+  isFav ? S.fav.delete(wordKey) : S.fav.add(wordKey);
+
+  // 同步更新 MY_WORDS（个人中心单词本）
+  if(MY_WORDS !== null){
+    if(action === 'add'){
+      // 追加：从全局词列表找到完整词信息
+      const wObj = W.find(w => w.id === wordId);
+      if(wObj){
+        const existing = MY_WORDS.find(w => w.id === wordId);
+        if(existing){
+          existing.fav_at = new Date().toISOString();
+        } else {
+          MY_WORDS.unshift({
+            id: wordId, word: wObj.word, pron: wObj.pron,
+            accent: wObj.accent, pos: wObj.pos, meaning: wObj.meaning,
+            fav_at: new Date().toISOString(), wrong_at: null,
+          });
+        }
+      }
+    } else {
+      // 取消收藏：清 fav_at；若也无 wrong_at 则移出列表
+      const existing = MY_WORDS.find(w => w.id === wordId);
+      if(existing){
+        existing.fav_at = null;
+        if(!existing.wrong_at) MY_WORDS = MY_WORDS.filter(w => w.id !== wordId);
+      }
+    }
+  }
+
+  draw();
+
+  // 后端同步
+  fetch('/api/favorites', {
+    method: 'POST',
+    headers: {'Content-Type':'application/json'},
+    body: JSON.stringify({user_id: UID, word_id: wordId, action}),
+  }).catch(e=>{
+    // 回滚
+    isFav ? S.fav.add(wordKey) : S.fav.delete(wordKey);
+    MY_WORDS = null;   // 回滚时重置缓存让下次重拉
+    draw();
+    console.error('收藏操作失败', e);
+  });
 }
 
 /* ---------- 单词 ---------- */
@@ -473,40 +545,447 @@ function words(){
       ${body}
     </div>
   </section>${S.modal?modal():''}`)
+  // 切到抽查 tab 且非答题/结果状态时，异步拉历史记录
+  if(test && (!QZ || (QZ.submitted && QZ.result))){
+    if(!QZ) setTimeout(loadQuizHistory, 0);
+  }
 }
 
-/* ---------- 抽查 ---------- */
+/* ---------- 抽查：测试记录列表 ---------- */
 function tests(){
-  return `<div class="toolbar">
-    <span>测试记录</span>
-    <button class="primary" onclick="S.modal=true;draw()">＋ 新建测试</button>
+  if(QZ && !QZ.submitted) return quizPage();
+  if(QZ && QZ.submitted)  return quizResult();
+
+  return `<div class="words-toolbar" style="border-bottom:none;padding-bottom:0">
+    <span style="font-size:13px;color:#9b8fc0">测试记录</span>
+    <button class="primary" style="margin-left:auto" onclick="S.modal=true;S.mTotalCount=null;fetchQuizCount();draw()">＋ 新建测试</button>
   </div>
-  <div class="scroll">
-    <table>
-      <thead><tr><th>测试名称</th><th>测试时间</th><th>范围</th><th>单词量</th><th>正确率</th><th>操作</th></tr></thead>
-      <tbody>
-        <tr><td>期末课本复习</td><td>2026/08/18 21:17</td><td>综日第三册第 1–5 课</td><td>40</td><td>92%</td><td><button class="pill">查看详情</button></td></tr>
-        <tr><td>本周错词回顾</td><td>2026/08/14 18:30</td><td>我的错词</td><td>20</td><td>85%</td><td><button class="pill">查看详情</button></td></tr>
-      </tbody>
-    </table>
+  <div id="quiz-history-wrap">
+    <div class="scroll"><div class="empty"><p>加载中…</p></div></div>
   </div>`;
 }
 
+/* 异步加载历史并注入 DOM，不重建整页 */
+function loadQuizHistory(){
+  const wrap = document.querySelector('#quiz-history-wrap');
+  if(!wrap) return;
+  fetch(`/api/quiz/history?user_id=${UID}`)
+    .then(r=>r.json())
+    .then(data=>{
+      const list = data.sessions || [];
+      if(!list.length){
+        wrap.innerHTML = `<div class="empty"><h2>暂无测试记录</h2><p>点右上角「新建测试」开始第一次练习。</p></div>`;
+        return;
+      }
+      wrap.innerHTML = `<div class="scroll"><table>
+        <thead><tr><th>测试名称</th><th>题型</th><th>题数</th><th>正确率</th><th>时间</th><th>操作</th></tr></thead>
+        <tbody>${list.map(s=>`
+          <tr>
+            <td><b>${s.name}</b></td>
+            <td>${s.mode_label}</td>
+            <td>${s.total}</td>
+            <td>${s.finished ? s.score+'%' : '<em style="color:#9b8fc0">未完成</em>'}</td>
+            <td style="color:#9b8fc0;font-size:12px">${s.created_at ? s.created_at.slice(0,16).replace('T',' ') : ''}</td>
+            <td><button class="pill" onclick="viewSession(${s.id})">查看详情</button></td>
+          </tr>`).join('')}
+        </tbody>
+      </table></div>`;
+    })
+    .catch(()=>{ if(wrap) wrap.innerHTML=`<div class="empty"><p>加载失败，请检查网络。</p></div>`; });
+}
+
+/* ---------- 开始抽查：发 API ---------- */
+/* 异步查询当前范围内的词数，更新 S.mTotalCount 并刷新界面 */
+let _countTimer = null;
+function fetchQuizCount(){
+  // 防抖：100ms 内多次调用只发一次请求
+  clearTimeout(_countTimer);
+  _countTimer = setTimeout(()=>{
+    const book     = S.mBook;
+    const isMyBook = book === '我的单词本';
+    if(!book || !S.mMode) return;
+
+    const p = new URLSearchParams({
+      user_id: UID,
+      mode:    S.mMode,
+    });
+    if(isMyBook){
+      p.set('scope', S.mScope || 'all');
+    } else {
+      const bNum = BOOK_NUM[book];
+      if(!bNum) return;
+      p.set('book',        bNum);
+      p.set('from_lesson', S.mFromL);
+      p.set('from_unit',   S.mFromU);
+      p.set('to_lesson',   S.mToL);
+      p.set('to_unit',     S.mToU);
+    }
+
+    fetch('/api/quiz/count?' + p.toString())
+      .then(r=>r.json())
+      .then(data=>{ S.mTotalCount = data.count ?? null; draw(); })
+      .catch(()=>{});
+  }, 100);
+}
+
+function startQuiz(){
+  const book   = S.mBook;
+  const isMyBook = book === '我的单词本';
+  const name   = S.mName.trim() || '未命名测试';
+  const qty    = S.mQty==='全部' ? null : S.mQty==='自定义' ? (+S.mCustom||20) : +S.mQty;
+
+  const body = {
+    user_id: UID,
+    name,
+    mode: S.mMode,
+    qty,
+  };
+  if(isMyBook){
+    body.scope = S.mScope || 'all';
+  } else {
+    body.book     = BOOK_NUM[book] || 3;
+    body.from_lesson = S.mFromL;
+    body.from_unit   = S.mFromU;
+    body.to_lesson   = S.mToL;
+    body.to_unit     = S.mToU;
+  }
+
+  S.modal = false;
+  S.mName = '';   // 下次打开 modal 名称清空
+  // 先 draw 显示"加载中"
+  QZ = { loading: true };
+  draw();
+
+  fetch('/api/quiz/start', {
+    method: 'POST',
+    headers: {'Content-Type':'application/json'},
+    body: JSON.stringify(body),
+  })
+  .then(r=>r.json())
+  .then(data=>{
+    if(data.error){ alert('抽题失败：' + data.error); QZ=null; draw(); return; }
+    QZ = {
+      sessionId:  data.session_id,
+      questions:  data.questions,
+      mode:       data.mode,
+      modeLabel:  data.mode_label,
+      qIdx:       0,
+      answers:    [],  // [{word_id, mode, user_answer, correct_answer, is_correct}]
+      submitted:  false,
+      result:     null,
+      startTime:  Date.now(),   // 用于计算用时
+    };
+    draw();
+  })
+  .catch(e=>{ alert('网络错误：'+e); QZ=null; draw(); });
+}
+
+/* ---------- 答题页 ---------- */
+function quizPage(){
+  if(QZ.loading) return `<div class="empty"><p>加载中…</p></div>`;
+
+  const q     = QZ.questions[QZ.qIdx];
+  const total = QZ.questions.length;
+  const idx   = QZ.qIdx;
+  const pct   = Math.round(idx / total * 100);
+  const isLast = idx === total - 1;
+
+  // 上一题已答的内容（回顾用）
+  const prevAns = QZ.answers[idx] ? QZ.answers[idx].user_answer : '';
+
+  return `
+  <div class="quiz-page">
+    <div class="quiz-progress">
+      <span>${idx+1} / ${total}</span>
+      <div class="quiz-bar"><div class="quiz-bar-fill" style="width:${pct}%"></div></div>
+      <span style="color:#9b8fc0;font-size:12px">${QZ.modeLabel}</span>
+    </div>
+
+    <div class="quiz-prompt">${q.prompt}</div>
+    ${QZ.mode==='word2accent' ? `<div class="quiz-sub">${q.pronunciation||''}</div>` : ''}
+
+    <input id="quiz-ans" class="answer" placeholder="在此输入答案…" value="${prevAns}"
+      onkeydown="if(event.key==='Enter'){event.preventDefault();submitOne()}"
+      autocomplete="off">
+
+    <div class="quiz-nav">
+      <button onclick="quizBack()" ${idx===0?'disabled':''}>← 上一题</button>
+      <button class="primary" onclick="submitOne()">${isLast ? '提交测试 →' : '下一题 →'}</button>
+    </div>
+  </div>`;
+}
+
+/* 下一题/提交 */
+function submitOne(){
+  const inp = document.querySelector('#quiz-ans');
+  const val = inp ? inp.value.trim() : '';
+  const q   = QZ.questions[QZ.qIdx];
+  const is_correct = judgeAnswer(QZ.mode, val, q.correct_answer);
+
+  QZ.answers[QZ.qIdx] = {
+    word_id:        q.word_id,
+    mode:           QZ.mode,
+    user_answer:    val,
+    correct_answer: q.correct_answer,
+    is_correct,
+  };
+
+  if(QZ.qIdx < QZ.questions.length - 1){
+    QZ.qIdx++;
+    draw();
+    setTimeout(()=>{ const el=document.querySelector('#quiz-ans'); if(el) el.focus(); }, 0);
+  } else {
+    // 全部答完，提交
+    submitQuiz();
+  }
+}
+
+/* 上一题 */
+function quizBack(){
+  if(QZ.qIdx > 0){ QZ.qIdx--; draw(); }
+}
+
+/* 前端判分（与后端 judge 逻辑保持一致） */
+function judgeAnswer(mode, userAns, correctAns){
+  // 全角→半角，去首尾空白
+  const norm = s => (s||'').trim().replace(/[！-～]/g, c=>String.fromCharCode(c.charCodeAt(0)-0xFEE0));
+  const ua = norm(userAns);
+  if(!ua) return false;
+
+  if(['word2meaning','gairaigo_jp2cn'].includes(mode)){
+    // 释义：';' 分隔多义项，用户答案须与某完整义项完全相等（不接受子串）
+    return correctAns.split(';').map(norm).filter(Boolean).includes(ua);
+  }
+  // 假名、外来语单词、音调：严格全等；'/' 分隔时任一匹配即可
+  return correctAns.split('/').map(norm).filter(Boolean).includes(ua);
+}
+
+/* 提交整次测试 */
+function submitQuiz(){
+  QZ.submitted  = true;
+  QZ.submitting = true;
+  QZ.elapsed    = Math.round((Date.now() - (QZ.startTime || Date.now())) / 1000); // 秒
+  draw();
+
+  fetch('/api/quiz/submit', {
+    method: 'POST',
+    headers: {'Content-Type':'application/json'},
+    body: JSON.stringify({
+      session_id: QZ.sessionId,
+      user_id:    UID,
+      answers:    QZ.answers,
+    }),
+  })
+  .then(r=>r.json())
+  .then(data=>{
+    QZ.submitting = false;
+    QZ.result = data;
+    draw();
+  })
+  .catch(e=>{ QZ.submitting=false; alert('提交失败：'+e); QZ.submitted=false; draw(); });
+}
+
+/* ---------- 结果页 ---------- */
+function quizResult(){
+  if(QZ.submitting) return `<div class="empty"><p>提交中…</p></div>`;
+
+  const r = QZ.result;
+  // 以本地 answers 为准（忽略操作会在本地同步更新）
+  const localCorrect = QZ.answers.filter(a=>!a.ignored && a.is_correct).length
+                     + QZ.answers.filter(a=> a.ignored).length;
+  const total   = QZ.answers.length;
+  const score   = total ? Math.round(localCorrect / total * 100) : 0;
+
+  // 用时格式化
+  const sec = QZ.elapsed || 0;
+  const timeStr = sec >= 60
+    ? `${Math.floor(sec/60)} 分 ${sec%60} 秒`
+    : `${sec} 秒`;
+
+  const wrongItems = QZ.answers.filter(a => !a.is_correct && !a.ignored);
+
+  return `
+  <div class="result">
+    <small style="color:#9b8fc0">${QZ.modeLabel} · ${total} 题 · 用时 ${timeStr}</small>
+    <strong>${localCorrect} / ${total}</strong>
+    <p style="color:#9b8fc0;margin:6px 0 20px">${score>=90?'出色！':score>=70?'不错，继续加油！':score>=50?'还需多练习。':'没关系，多复习几遍。'}</p>
+
+    <div style="display:flex;justify-content:center;gap:6px;flex-wrap:wrap;margin-bottom:20px">
+      ${QZ.answers.map((a,i)=>{
+        const cls = a.ignored ? 'ignored' : a.is_correct ? 'good' : 'bad';
+        return `<button class="${cls}" title="${QZ.questions[i].prompt}" style="font-size:11px;min-width:36px">${i+1}</button>`;
+      }).join('')}
+    </div>
+
+    ${wrongItems.length ? `
+    <article>
+      <b>答错的题（${wrongItems.length} 道）</b>
+      <table style="margin-top:12px">
+        <thead><tr><th>题目</th><th>你的答案</th><th>正确答案</th><th>操作</th></tr></thead>
+        <tbody>
+          ${wrongItems.map(a=>{
+            const q = QZ.questions.find(x=>x.word_id===a.word_id);
+            return `<tr>
+              <td><b>${q?q.prompt:''}</b></td>
+              <td style="color:#e8526a">${a.user_answer||'（未作答）'}</td>
+              <td style="color:#34c47c"><b>${a.correct_answer}</b></td>
+              <td><button class="override-btn" onclick="overrideAnswer(${a.word_id})" style="font-size:12px;padding:3px 10px;color:#7c3aed;border-color:#c4b5fd;background:#f5f0ff">忽略</button></td>
+            </tr>`;
+          }).join('')}
+        </tbody>
+      </table>
+      <p style="font-size:12px;color:#bbb;margin-top:8px">* 忽略后不计入错词本</p>
+    </article>` : `<article style="text-align:center;border-color:#d8f5e8;background:#f0fdf7"><b style="color:#34c47c">全部答对！</b></article>`}
+
+    <div class="result footer" style="margin-top:22px">
+      <button onclick="QZ=null;draw()">返回记录</button>
+      <button class="primary" onclick="QZ=null;S.t='book';go('words')">复习单词</button>
+    </div>
+  </div>`;
+}
+
+/* 忽略某道答错的题（前端标记 + 调后端接口撤销错词） */
+function overrideAnswer(wordId){
+  const ans = QZ.answers.find(a => a.word_id === wordId);
+  if(!ans || ans.is_correct || ans.ignored) return;
+
+  ans.ignored = true;   // 前端立即生效
+  draw();
+
+  fetch('/api/quiz/override', {
+    method: 'POST',
+    headers: {'Content-Type':'application/json'},
+    body: JSON.stringify({
+      session_id: QZ.sessionId,
+      user_id:    UID,
+      word_id:    wordId,
+    }),
+  })
+  .then(r=>r.json())
+  .then(data=>{ if(!data.ok) console.warn('override failed', data); })
+  .catch(e=>console.error('override error', e));
+}
+
+/* 查看历史测试详情（占位，后续完善） */
+function viewSession(id){
+  fetch(`/api/quiz/session/${id}?user_id=${UID}`)
+    .then(r=>r.json())
+    .then(data=>{
+      const s = data.session;
+      const answers = data.answers;
+      const wrong = answers.filter(a=>!a.is_correct);
+      alert(`「${s.name}」\n题型：${s.mode_label}\n得分：${s.correct}/${s.total}（${s.score}%）\n答错 ${wrong.length} 道`);
+    })
+    .catch(()=>alert('加载失败'));
+}
+
+
 /* ---------- 新建测试弹窗 ---------- */
 function modal(){
+  const isLoan   = S.mMode.startsWith('gairaigo');
+  const isCustom = S.mQty  === '自定义';
+  const book     = S.mBook;
+  const isMyBook = book === '我的单词本';
+  const isRegBook = book && !isMyBook;
+
+  const [maxL, maxU] = BOOK_MAX[book] || [15, 3];
+  const lessons = Array.from({length:maxL},(_,i)=>i+1);
+  const units   = Array.from({length:maxU},(_,i)=>i+1);
+
+  // 范围下拉选项
+  function lessonOpts(cur){ return lessons.map(n=>`<option ${cur===n?'selected':''}>${n}</option>`).join(''); }
+  function unitOpts(cur){   return units.map(n=>`<option ${cur===n?'selected':''}>${n}</option>`).join(''); }
+
   return `<div class="shade" onclick="if(event.target===this){S.modal=false;draw()}">
     <div class="modal">
       <h2>新建测试</h2>
-      ${[
-        ['＊测试名称','<input placeholder="例如：期末课本复习">'],
-        ['＊单词本','<select><option>综日一</option><option>综日二</option><option>综日三</option><option>综日四</option><option>我的单词本</option></select>'],
-        ['＊范围','第 <select style="width:80px"><option>1</option></select> 课 Unit <select style="width:80px"><option>1</option></select> ～ 第 <select style="width:80px"><option>5</option></select> 课 Unit <select style="width:80px"><option>3</option></select>'],
-        ['＊数量','<label style="margin-right:12px"><input type="radio" name="n" checked> 20</label><label style="margin-right:12px"><input type="radio" name="n"> 40</label><label style="margin-right:12px"><input type="radio" name="n"> 60</label><label style="margin-right:12px"><input type="radio" name="n"> 80</label><label><input type="radio" name="n"> 自定义</label>'],
-        ['＊模式','<select><option>单词（展示假名）</option><option>假名（展示汉字）</option><option>音调（展示单词）</option><option>释义（展示单词）</option><option>外来语</option></select>']
-      ].map(x=>`<div class="form"><b>${x[0]}</b><span>${x[1]}</span></div>`).join('')}
+      <div class="form-rows">
+
+        <div class="form-row">
+          <b>＊测试名称</b>
+          <input placeholder="例如：期末课本复习" value="${S.mName}"
+            oninput="S.mName=this.value">
+        </div>
+
+        <div class="form-row">
+          <b>＊单词本</b>
+          <select onchange="S.mBook=this.value;S.mFromL=1;S.mFromU=1;S.mToL=BOOK_MAX[this.value]?BOOK_MAX[this.value][0]:15;S.mToU=BOOK_MAX[this.value]?BOOK_MAX[this.value][1]:3;S.mScope='';S.mTotalCount=null;fetchQuizCount();draw()">
+            <option value="">请选择…</option>
+            <option value="综日一" ${book==='综日一'?'selected':''}>综日一</option>
+            <option value="综日二" ${book==='综日二'?'selected':''}>综日二</option>
+            <option value="综日三" ${book==='综日三'?'selected':''}>综日三</option>
+            <option value="综日四" ${book==='综日四'?'selected':''}>综日四</option>
+            <option value="我的单词本" ${isMyBook?'selected':''}>我的单词本</option>
+          </select>
+        </div>
+
+        ${isRegBook ? `
+        <div class="form-row">
+          <b>＊范围</b>
+          <div class="range-wrap">
+            <div class="range-line">
+              <span class="range-label">从</span>
+              <span class="range-inline">第
+                <select onchange="S.mFromL=+this.value;S.mTotalCount=null;fetchQuizCount();draw()">${lessonOpts(S.mFromL)}</select>
+              课</span>
+              <span class="range-inline">Unit
+                <select onchange="S.mFromU=+this.value;S.mTotalCount=null;fetchQuizCount()">${unitOpts(S.mFromU)}</select>
+              </span>
+            </div>
+            <div class="range-line">
+              <span class="range-label">到</span>
+              <span class="range-inline">第
+                <select onchange="S.mToL=+this.value;S.mTotalCount=null;fetchQuizCount();draw()">${lessonOpts(S.mToL)}</select>
+              课</span>
+              <span class="range-inline">Unit
+                <select onchange="S.mToU=+this.value;S.mTotalCount=null;fetchQuizCount()">${unitOpts(S.mToU)}</select>
+              </span>
+            </div>
+          </div>
+        </div>` : ''}
+
+        ${isMyBook ? `
+        <div class="form-row">
+          <b>＊范围</b>
+          <select onchange="S.mScope=this.value">
+            <option value="fav"   ${S.mScope==='fav'  ?'selected':''}>收藏</option>
+            <option value="wrong" ${S.mScope==='wrong' ?'selected':''}>错词</option>
+            <option value="all"   ${S.mScope==='all'   ?'selected':''}>全部</option>
+          </select>
+        </div>` : ''}
+
+        ${book ? `
+        <div class="form-row">
+          <b>＊数量</b>
+          <div class="radio-group">
+            ${['20','40','60'].map(v=>
+              `<label><input type="radio" name="mqty" ${S.mQty===v?'checked':''}
+                onchange="S.mQty='${v}';draw()"> ${v}</label>`
+            ).join('')}
+            <label><input type="radio" name="mqty" ${S.mQty==='全部'?'checked':''}
+              onchange="S.mQty='全部';draw()"> 全部${S.mTotalCount!=null?`<span style="color:#9b8fc0;font-size:12px;margin-left:4px">（共 ${S.mTotalCount} 词）</span>`:''}
+            </label>
+            <label><input type="radio" name="mqty" ${S.mQty==='自定义'?'checked':''}
+              onchange="S.mQty='自定义';draw()"> 自定义</label>
+            ${isCustom ? `<input class="custom-input" type="number" min="1" max="999"
+              value="${S.mCustom}" placeholder="输入数量"
+              oninput="S.mCustom=this.value">` : ''}
+          </div>
+        </div>
+
+        <div class="form-row">
+          <b>＊题型</b>
+          <select onchange="S.mMode=this.value;S.mTotalCount=null;fetchQuizCount();draw()">
+            ${Object.entries(MODES).map(([k,v])=>
+              `<option value="${k}" ${S.mMode===k?'selected':''}>${v}</option>`
+            ).join('')}
+          </select>
+        </div>` : ''}
+
+      </div>
       <footer>
         <button onclick="S.modal=false;draw()">取消</button>
-        <button class="primary" onclick="S.modal=false;draw()">创建测试</button>
+        <button class="primary" onclick="startQuiz()">创建测试</button>
       </footer>
     </div>
   </div>`;
@@ -571,31 +1050,99 @@ function resources(){
 }
 
 /* ---------- 个人中心 ---------- */
+
+// 单词本缓存（收藏 + 错词 合并）
+let MY_WORDS = null;   // null=未加载
+
+function loadMyWords(){
+  fetch(`/api/favorites?user_id=${UID}&scope=all`)
+    .then(r=>r.json())
+    .then(data=>{
+      MY_WORDS = data.words || [];
+      draw();
+    })
+    .catch(()=>{ MY_WORDS = []; draw(); });
+}
+
 function profile(){
+  // 切换到单词本页时自动加载
+  if(S.pro==='words' && MY_WORDS === null){
+    MY_WORDS = [];   // 防重复请求
+    setTimeout(loadMyWords, 0);
+  }
+
+  const wList = S.profileQ
+    ? (MY_WORDS||[]).filter(w=>
+        w.word.includes(S.profileQ)||(w.pron||'').includes(S.profileQ)||(w.meaning||'').includes(S.profileQ))
+    : (MY_WORDS||[]);
+
   const body = S.pro==='words'
     ? `<div class="card">
-        <div style="margin-bottom:16px"><b style="font-size:16px">我的单词本</b></div>
-        ${search('profile')}
-        <div class="scroll">
-          <table>
-            <thead><tr><th>单词</th><th>假名</th><th>音调</th><th>词性</th><th>意思</th><th>来源</th><th>操作</th></tr></thead>
-            <tbody>${rows(W.filter(x=>S.fav.has(x.word)),true,true,true)}</tbody>
-          </table>
+        <div style="margin-bottom:16px;display:flex;align-items:center;gap:12px">
+          <b style="font-size:16px">我的单词本</b>
+          <span style="color:#9b8fc0;font-size:13px">${MY_WORDS===null?'加载中…':`共 ${MY_WORDS.length} 词`}</span>
+          <button onclick="MY_WORDS=null;loadMyWords()" style="margin-left:auto;font-size:12px;padding:4px 10px">刷新</button>
         </div>
+        <div class="search-inline" style="margin-bottom:12px">
+          <input value="${S.profileQ}" oninput="S.profileQ=this.value;draw()"
+            placeholder="搜索单词、假名或中文意思…" style="width:100%">
+        </div>
+        ${MY_WORDS===null
+          ? `<div class="empty"><p>加载中…</p></div>`
+          : wList.length===0
+            ? `<div class="empty"><p>${MY_WORDS.length===0?'单词本还是空的，去收藏一些单词或做点测试吧':'搜索无结果'}</p></div>`
+            : `<div class="scroll">
+                <table class="profile-word-table">
+                  <thead><tr><th>单词</th><th>假名</th><th>音调</th><th>词性</th><th>意思</th><th>标签</th><th>操作</th></tr></thead>
+                  <tbody>
+                    ${wList.map(w=>{
+                      const tags = [];
+                      if(w.fav_at)   tags.push(`<mark class="tag-fav">收藏</mark>`);
+                      if(w.wrong_at) tags.push(`<mark class="tag-wrong">错词</mark>`);
+                      return `<tr>
+                        <td><b>${w.word}</b></td>
+                        <td>${w.pron||''}</td>
+                        <td>${w.accent||''}</td>
+                        <td>${w.pos||''}</td>
+                        <td>${w.meaning||''}</td>
+                        <td>${tags.join(' ')}</td>
+                        <td><button class="pill" onclick="removeMyWord(${w.id})" style="font-size:12px">移除</button></td>
+                      </tr>`;
+                    }).join('')}
+                  </tbody>
+                </table>
+              </div>`
+        }
        </div>`
-    : `<div class="empty"><div>⚑<h2>我的错题</h2><p>错题归集功能已预留，待接入真实测试数据后在此展示。</p></div></div>`;
+    : `<div class="empty"><div>⚑<h2>作业错题</h2><p>作业中做错的题会归集在这里，功能待接入。</p></div></div>`;
+
   box(title('个人中心','My Space','home')+`
     <div class="profile">
       <aside>
         <i>♞</i>
         <b>林同学</b>
         <small>清华大学 · ${S.g}</small>
-        <button onclick="S.pro='words';draw()">📖　我的单词本</button>
-        <button onclick="S.pro='mistakes';draw()">✏️　我的错题</button>
+        <button onclick="S.pro='words';if(MY_WORDS===null)loadMyWords();draw()">📖　我的单词本</button>
+        <button onclick="S.pro='mistakes';draw()">✏️　作业错题</button>
       </aside>
       ${body}
     </div>
   </section>`);
+}
+
+/* 从单词本移除一个词（同时清除收藏和错词标记） */
+function removeMyWord(wordId){
+  if(!confirm('确定从单词本移除这个词？（同时清除收藏和错词标记）')) return;
+  fetch('/api/favorites', {
+    method: 'POST',
+    headers: {'Content-Type':'application/json'},
+    body: JSON.stringify({user_id: UID, word_id: wordId, action: 'remove'}),
+  })
+  .then(()=>{
+    // 本地同步移除
+    if(MY_WORDS) MY_WORDS = MY_WORDS.filter(w => w.id !== wordId);
+    draw();
+  });
 }
 
 /* ---------- 作业 ---------- */

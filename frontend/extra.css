@@ -907,8 +907,41 @@ mark {
   padding: 2px 6px;
   font-weight: 600;
 }
+mark.tag-fav {
+  background: #f3eeff;
+  color: #7c3aed;
+  white-space: nowrap;
+}
+mark.tag-wrong {
+  background: #fff0f2;
+  color: #e8526a;
+  white-space: nowrap;
+}
 
-/* 第_课 / Unit_ 内嵌下拉 */
+/* ---- 个人中心单词本表格列宽 ---- */
+.profile-word-table {
+  table-layout: fixed;
+  min-width: 560px;
+}
+.profile-word-table th:nth-child(1),
+.profile-word-table td:nth-child(1) { width: 12%; }
+.profile-word-table th:nth-child(2),
+.profile-word-table td:nth-child(2) { width: 14%; }
+.profile-word-table th:nth-child(3),
+.profile-word-table td:nth-child(3) { width: 7%; text-align: center; }
+.profile-word-table th:nth-child(4),
+.profile-word-table td:nth-child(4) { width: 11%; }
+.profile-word-table th:nth-child(5),
+.profile-word-table td:nth-child(5) {
+  overflow-wrap: anywhere;
+  word-break: break-all;
+}
+.profile-word-table th:nth-child(6),
+.profile-word-table td:nth-child(6) { width: 14%; white-space: nowrap; }
+.profile-word-table th:nth-child(7),
+.profile-word-table td:nth-child(7) { width: 10%; white-space: nowrap; }
+.profile-word-table th { white-space: nowrap; }
+
 .inline-filter {
   display: inline-flex;
   align-items: center;
@@ -1198,16 +1231,89 @@ mark {
   place-items: center;
 }
 .modal {
-  max-width: 520px;
+  max-width: 480px;
   width: 92%;
   background: white;
   border-radius: 22px;
-  padding: 32px;
+  padding: 32px 32px 28px;
   box-shadow: 0 24px 60px #2a204040;
 }
-.modal h2 { margin: 0 0 24px; font: 700 20px "Playfair Display", serif; color: #1a1230; }
-.form { display: grid; grid-template-columns: 90px 1fr; gap: 14px; align-items: center; }
-.form b { font-size: 13px; color: #2a2040; }
+.modal h2 { margin: 0 0 20px; font: 700 20px "Playfair Display", serif; color: #1a1230; }
+
+/* 表单行布局 */
+.form-rows { display: flex; flex-direction: column; gap: 14px; }
+.form-row {
+  display: grid;
+  grid-template-columns: 72px 1fr;
+  align-items: start;
+  gap: 10px;
+}
+.form-row b { font-size: 12px; color: #6b6080; padding-top: 8px; white-space: nowrap; }
+.form-row input, .form-row select { width: 100%; }
+
+/* 范围行：两行，从/到对齐 */
+.range-wrap {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.range-line {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.range-label {
+  font-size: 12px;
+  color: #9b8fc0;
+  width: 16px;
+  flex: none;
+}
+.range-inline {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 13px;
+  white-space: nowrap;
+}
+.range-inline select { width: auto; min-width: 52px; padding: 6px 6px; }
+.range-sep { color: #9b8fc0; font-size: 13px; padding: 0 2px; }
+
+/* 数量：自定义输入框 */
+.radio-group {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 14px;
+  padding-top: 6px;
+}
+.radio-group label {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 13px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.custom-input {
+  width: 80px;
+  padding: 5px 8px;
+  border: 1.5px solid #ddd7f0;
+  border-radius: 8px;
+  font-size: 13px;
+  outline: none;
+  margin-left: 4px;
+}
+.custom-input:focus { border-color: #7c3aed; }
+
+/* 模式：外来语展开行 */
+.mode-wrap {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.loan-row select {
+  width: 100%;
+}
 .modal footer, .question footer, .result footer {
   display: flex;
   justify-content: flex-end;
@@ -1267,7 +1373,7 @@ mark {
 }
 .result article b { color: #c7455e; }
 .result footer { justify-content: center; }
-.good, .bad {
+.good, .bad, .ignored {
   width: 36px; height: 36px;
   border-radius: 50%;
   color: white;
@@ -1276,8 +1382,9 @@ mark {
   margin: 4px;
   font-weight: 700;
 }
-.good { background: #34c47c; }
-.bad { background: #e8526a; }
+.good    { background: #34c47c; }
+.bad     { background: #e8526a; }
+.ignored { background: #a0a0b8; }  /* 灰色：已忽略 */
 
 /* ============================================================
    登录页
@@ -1349,3 +1456,77 @@ mark {
 }
 
 @keyframes float { 50% { transform: translateY(-6px); } }
+
+/* ============================================================
+   抽查答题页 & 结果页
+   ============================================================ */
+.quiz-page {
+  max-width: 620px;
+  margin: 32px auto 0;
+  padding: 0 20px 40px;
+  display: flex;
+  flex-direction: column;
+  gap: 22px;
+}
+
+/* 进度条 */
+.quiz-progress {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  font-size: 13px;
+  font-weight: 600;
+  color: #3a2860;
+}
+.quiz-bar {
+  flex: 1;
+  height: 6px;
+  background: #ede8f7;
+  border-radius: 99px;
+  overflow: hidden;
+}
+.quiz-bar-fill {
+  height: 100%;
+  background: linear-gradient(90deg, #7c3aed, #a068e8);
+  border-radius: 99px;
+  transition: width .3s ease;
+}
+
+/* 题目展示 */
+.quiz-prompt {
+  font: 700 clamp(22px, 4vw, 36px) "Playfair Display", serif;
+  color: #1a1230;
+  letter-spacing: -0.5px;
+  text-align: center;
+  padding: 24px 0 8px;
+  line-height: 1.4;
+}
+.quiz-sub {
+  text-align: center;
+  color: #9b8fc0;
+  font-size: 16px;
+  margin-top: -14px;
+}
+
+/* 导航按钮 */
+.quiz-nav {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  margin-top: 8px;
+}
+.quiz-nav button {
+  padding: 10px 20px;
+  border-radius: 10px;
+  border: 1.5px solid #ddd7f0;
+  background: white;
+  color: #6c08a0;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background .15s;
+}
+.quiz-nav button:hover:not(:disabled) { background: #f3eeff; }
+.quiz-nav button:disabled { color: #c9c0e0; border-color: #ede8f7; cursor: default; }
+

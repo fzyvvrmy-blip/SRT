@@ -26,10 +26,19 @@ def _to_hira(s):
 
 
 def kana_str(word, pron):
-    """排序用假名串：优先读音，读音不是假名（如外来语语源）时退回写法；片假名转平假名。"""
-    s = _to_hira(pron)
-    if not s or s[0] not in _WEIGHT:
-        s = _to_hira(word)
+    """排序用假名串：优先读音，读音不是假名（如外来语语源）时退回写法；片假名转平假名。
+    前缀符号（〜 ～ ・ 等）跳过，取第一个假名字符起的串。"""
+    def first_kana(s):
+        """跳过非假名前缀，返回从第一个假名字符开始的子串。"""
+        s = _to_hira(s or '')
+        for i, c in enumerate(s):
+            if c in _WEIGHT:
+                return s[i:]
+        return ''
+
+    s = first_kana(pron)
+    if not s:
+        s = first_kana(word)
     return s
 
 

@@ -1,6 +1,7 @@
 # 本仓库专属
 *.zip
 audio_alignment(mfa)/
+.claude/
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
