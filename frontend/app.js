@@ -25,7 +25,7 @@
      rXxx        精读页状态（册号、课号、译文开关、当前高亮句）
    ---------------------------------------------------------- */
 const A=document.querySelector('#app'),S={p:'home',g:'大一',t:'kana',q:'',profileQ:'',fav:new Set(),modal:false,pro:'words',n:1,a:'',show:true,usermenu:false,mBook:'',mFromL:1,mFromU:1,mToL:15,mToU:3,mScope:'fav',mQty:'20',mCustom:'',mMode:'kanji2kana',mTotalCount:null,mName:'',
-  rBook:1,rLesson:5,rShowTrans:false,rActiveSentence:-1,rPlayOne:false};
+  rBook:1,rLesson:5,rShowTrans:false,rActiveSentence:-1,rPlayOne:false,rPlayEnd:0,rPlayIdx:-1};
 
 /* ---------- 精读缓存（模块级变量，不放 S 是因为它们不触发 draw） ---------- */
 let RD_LESSONS=null;    // 课号列表，null=未加载
@@ -1109,14 +1109,16 @@ function rdOnTimeUpdate(){
       if(el)el.scrollIntoView({behavior:'smooth',block:'nearest'});
     }
   }
-  // 点读模式：播到当前句的 end 就停，不自动连播下一句
-  if(S.rPlayOne){
-    const cur=RD_SENTENCES[S.rActiveSentence];
-    if(cur && t>=cur.end){
-      RD_AUDIO.pause();
-      RD_AUDIO.currentTime=cur.end;
-      S.rPlayOne=false;
-    }
+  // 点读模式：播到目标句的 end 就停，不自动连播下一句
+  if(S.rPlayOne && t>=S.rPlayEnd){
+    RD_AUDIO.pause();
+    RD_AUDIO.currentTime=S.rPlayEnd;
+    S.rPlayOne=false;
+    // 停止后把高亮恢复到点读的那句（此刻 t 已越过 end，高亮逻辑已把它清成 -1）
+    S.rActiveSentence=S.rPlayIdx;
+    document.querySelectorAll('.rd-sentence').forEach(el=>{
+      el.classList.toggle('rd-active',+el.dataset.idx===S.rPlayIdx);
+    });
   }
   rdDrawControls();
 }
@@ -1156,6 +1158,8 @@ function rdPlaySentence(idx){
   RD_AUDIO.play().catch(()=>{});
   S.rActiveSentence=idx;
   S.rPlayOne=true;   // 点读模式：播完这一句就停
+  S.rPlayEnd=s.end;
+  S.rPlayIdx=idx;
   document.querySelectorAll('.rd-sentence').forEach(el=>
     el.classList.toggle('rd-active',+el.dataset.idx===idx));
   rdDrawControls();
