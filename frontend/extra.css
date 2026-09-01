@@ -1530,3 +1530,141 @@ mark.tag-wrong {
 .quiz-nav button:hover:not(:disabled) { background: #f3eeff; }
 .quiz-nav button:disabled { color: #c9c0e0; border-color: #ede8f7; cursor: default; }
 
+/* ============================================================
+   精读页面
+   ============================================================ */
+
+/* 整体 card */
+.rd-card {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+  padding: 0;
+  overflow: hidden;
+}
+
+/* 顶部选择器行 */
+.rd-card .selects {
+  padding: 16px 20px 12px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  border-bottom: 1px solid #ede8f7;
+}
+
+/* 播放控制条 */
+.rd-ctrl-bar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 20px;
+  background: #f8f5ff;
+  border-bottom: 1px solid #ede8f7;
+}
+.rd-btn {
+  width: 36px; height: 36px;
+  border-radius: 50%;
+  background: #7c3aed;
+  color: #fff;
+  font-size: 14px;
+  border: none;
+  cursor: pointer;
+  flex-shrink: 0;
+  display: grid;
+  place-items: center;
+  transition: background .15s;
+}
+.rd-btn:hover { background: #6d28d9; }
+.rd-progress-wrap {
+  flex: 1;
+  position: relative;
+  height: 6px;
+  cursor: pointer;
+}
+.rd-progress-bg {
+  position: absolute; inset: 0;
+  background: #e2d9f3;
+  border-radius: 3px;
+}
+.rd-progress-fill {
+  position: absolute;
+  top: 0; left: 0; bottom: 0;
+  background: #7c3aed;
+  border-radius: 3px;
+  transition: width .2s linear;
+  pointer-events: none;
+}
+.rd-time {
+  font-size: 13px;
+  color: #7c3aed;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  min-width: 80px;
+  text-align: right;
+}
+
+/* 文章区域（左文+右译 flex） */
+.rd-article-wrap {
+  display: flex;
+  gap: 0;
+  flex: 1;
+  min-height: 0;
+}
+.rd-article {
+  flex: 1;
+  padding: 24px 28px 32px;
+  line-height: 2;
+  font-size: 17px;
+  overflow-y: auto;
+}
+.rd-trans {
+  width: 300px;
+  padding: 24px 20px 32px;
+  border-left: 1px solid #ede8f7;
+  font-size: 14px;
+  color: #666;
+  overflow-y: auto;
+}
+
+/* 文章标题 */
+.rd-title {
+  font-size: 19px;
+  font-weight: 700;
+  color: #3b0764;
+  margin: 0 0 18px;
+  letter-spacing: .04em;
+}
+
+/* 正文段落（所有句子连续排在一起） */
+.rd-body {
+  margin: 0;
+  line-height: 2.2;
+}
+
+/* 可点击句子 span */
+.rd-sentence {
+  cursor: pointer;
+  border-radius: 4px;
+  padding: 2px 3px;
+  margin-right: 2px;
+  display: inline;
+  transition: background .12s, color .12s;
+}
+.rd-sentence:hover {
+  background: #ede8f7;
+  color: #5b21b6;
+}
+.rd-sentence.rd-active {
+  background: #7c3aed;
+  color: #fff;
+  border-radius: 4px;
+}
+
+/* 加载/提示 */
+.rd-loading, .rd-hint {
+  color: #a0a0b8;
+  font-size: 15px;
+  padding: 20px 0;
+}
+
+

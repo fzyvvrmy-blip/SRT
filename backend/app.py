@@ -5,7 +5,7 @@
 前端：http://127.0.0.1:5000/      API 健康检查：/api/health
 """
 import os
-from flask import Flask, jsonify, send_from_directory, request
+from flask import Flask, jsonify, send_from_directory, request, Response
 
 import config
 from services.kana import sort_kana, kana_str
@@ -510,6 +510,112 @@ def quiz_session(sid):
         },
         'answers': answers,
     })
+
+
+# ── 精读 ─────────────────────────────────────────────────────────────────────
+
+@app.route('/api/reading/lessons')
+def reading_lessons():
+    """返回有句子数据的 (book, lesson) 列表。"""
+    book = request.args.get('book', type=int)
+    conn = get_conn()
+    try:
+        cur = conn.cursor()
+        if book:
+            cur.execute("""
+                SELECT DISTINCT book, lesson
+                FROM koniponi.reading_sentences
+                WHERE book = %s
+                ORDER BY book, lesson
+            """, (book,))
+        else:
+            cur.execute("""
+                SELECT DISTINCT book, lesson
+                FROM koniponi.reading_sentences
+                ORDER BY book, lesson
+            """)
+        rows = cur.fetchall()
+    finally:
+        cur.close(); conn.close()
+    return jsonify({'lessons': [{'book': r[0], 'lesson': r[1]} for r in rows]})
+
+
+@app.route('/api/reading/sentences')
+def reading_sentences():
+    """
+    返回某课的所有句子（含时间戳和文本）。
+    query params: book, lesson
+    """
+    book   = request.args.get('book',   type=int)
+    lesson = request.args.get('lesson', type=int)
+    if not book or not lesson:
+        return jsonify({'error': 'book and lesson required'}), 400
+
+    conn = get_conn()
+    try:
+        cur = conn.cursor()
+        cur.execute("""
+            SELECT id, sentence, text, translation, start_time, end_time, source_file
+            FROM koniponi.reading_sentences
+            WHERE book = %s AND lesson = %s
+            ORDER BY sentence
+        """, (book, lesson))
+        rows = cur.fetchall()
+    finally:
+        cur.close(); conn.close()
+
+    sentences = [{
+        'id':          r[0],
+        'seq':         r[1],
+        'text':        r[2] or '',
+        'translation': r[3] or '',
+        'start':       r[4],
+        'end':         r[5],
+        'source_file': r[6] or '',
+    } for r in rows]
+    return jsonify({'book': book, 'lesson': lesson, 'sentences': sentences})
+
+
+@app.route('/api/audio/<path:filepath>')
+def audio_proxy(filepath):
+    """
+    代理服务器上的音频文件（/home/Source/audio/...）给前端播放。
+    filepath 示例: book_1/1-5-3.mp3
+    支持 Range 请求，使浏览器能 seek。
+    """
+    audio_root = os.environ.get('AUDIO_ROOT', '/home/Source/audio').rstrip('/')
+    full_path = f'{audio_root}/{filepath}'
+    range_header = request.headers.get('Range', None)
+
+    try:
+        file_size = os.path.getsize(full_path)
+
+        if range_header:
+            byte_range = range_header.replace('bytes=', '').split('-')
+            start = int(byte_range[0]) if byte_range[0] else 0
+            end   = int(byte_range[1]) if byte_range[1] else file_size - 1
+            end   = min(end, file_size - 1)
+            length = end - start + 1
+            with open(full_path, 'rb') as f:
+                f.seek(start)
+                data = f.read(length)
+            resp = Response(data, 206, mimetype='audio/mpeg')
+            resp.headers['Content-Range']  = f'bytes {start}-{end}/{file_size}'
+            resp.headers['Accept-Ranges']  = 'bytes'
+            resp.headers['Content-Length'] = str(length)
+        else:
+            with open(full_path, 'rb') as f:
+                data = f.read()
+            resp = Response(data, 200, mimetype='audio/mpeg')
+            resp.headers['Accept-Ranges']  = 'bytes'
+            resp.headers['Content-Length'] = str(file_size)
+
+        resp.headers['Cache-Control'] = 'public, max-age=3600'
+        return resp
+    except FileNotFoundError:
+        return jsonify({'error': f'audio file not found: {full_path}'}), 404
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
 
 
 # ── 静态文件 ──────────────────────────────────────────────────────────────────

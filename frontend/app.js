@@ -1,8 +1,45 @@
-const A=document.querySelector('#app'),S={p:'home',g:'大一',t:'kana',q:'',profileQ:'',fav:new Set(),modal:false,pro:'words',n:1,a:'',show:true,usermenu:false,mBook:'',mFromL:1,mFromU:1,mToL:15,mToU:3,mScope:'fav',mQty:'20',mCustom:'',mMode:'kanji2kana',mTotalCount:null,mName:''};
+/* ============================================================
+   app.js — KONIPONI 前端全部逻辑
+   ============================================================
+   架构：无框架，单文件。
+   渲染模型：所有页面状态存在全局对象 S 里，每次状态变化调
+   draw()，draw() 根据 S.p（当前页面名）调对应渲染函数，
+   渲染函数把 HTML 字符串写进 #app（innerHTML 整体替换）。
+   ============================================================ */
+
+/* ---------- 全局状态 S ----------
+   所有页面的状态都挂在这一个对象上，draw() 依赖它决定渲染什么。
+   字段按功能分组：
+     p           当前页面名 ('home'|'words'|'reader'|...)
+     g           年级
+     t           单词页当前 tab ('kana'|'book'|'test')
+     q           单词页搜索框内容
+     profileQ    个人中心搜索框内容（独立，不共用 q）
+     fav         已收藏单词的 key Set（本地缓存，用于收藏按钮即时响应）
+     modal       是否显示新建测试弹窗
+     pro         个人中心子页 ('words'|'mistakes')
+     n/a         作业题目页用的临时状态
+     show        精读旧版残留，暂留
+     usermenu    右上角用户菜单是否展开
+     mXxx        新建测试弹窗的各项表单值
+     rXxx        精读页状态（册号、课号、译文开关、当前高亮句）
+   ---------------------------------------------------------- */
+const A=document.querySelector('#app'),S={p:'home',g:'大一',t:'kana',q:'',profileQ:'',fav:new Set(),modal:false,pro:'words',n:1,a:'',show:true,usermenu:false,mBook:'',mFromL:1,mFromU:1,mToL:15,mToU:3,mScope:'fav',mQty:'20',mCustom:'',mMode:'kanji2kana',mTotalCount:null,mName:'',
+  rBook:1,rLesson:5,rShowTrans:false,rActiveSentence:-1};
+
+/* ---------- 精读缓存（模块级变量，不放 S 是因为它们不触发 draw） ---------- */
+let RD_LESSONS=null;    // 课号列表，null=未加载
+let RD_SENTENCES=null;  // 当前课的句子数组，null=未加载
+let RD_LOADING=false;   // 请求进行中，防止重复发
+let RD_AUDIO=null;      // HTML5 Audio 对象，精读播放专用
+
+/* ---------- 单词页常量 ---------- */
+// 各册的最大课数和最大 unit 数（用于新建测试弹窗的范围下拉）
 const BOOK_MAX={'综日一':[15,3],'综日二':[15,3],'综日三':[10,2],'综日四':[10,2]};
+// 册名 → 数字（发给后端用）
 const BOOK_NUM={'综日一':1,'综日二':2,'综日三':3,'综日四':4};
 
-/* 题型定义（与后端 MODES 保持一致） */
+/* 题型中文名（与后端 MODES 保持一致，用于弹窗下拉显示） */
 const MODES={
   kanji2kana:    '看汉字　写假名',
   kana2kanji:    '看假名　写汉字',
@@ -15,27 +52,32 @@ const MODES={
 /* 当前用户 id（硬编码，未来登录后替换） */
 const UID = '001';
 
-/* 抽查会话状态 */
-let QZ = null;   // {sessionId, questions, mode, modeLabel, qIdx, answers, submitted, result}
+/* 抽查会话状态（null=没有进行中的测试） */
+let QZ = null;   // {sessionId, questions, mode, modeLabel, qIdx, answers, submitted, result, startTime, elapsed}
 
+/* ---------- 单词数据缓存 ---------- */
 let W=[],W_BOOK=3,W_LOADING=false;
-let PAGE=1,KANA_SEL='あ';              // 分页 + 假名段
-let BK={lesson:'',unit:'',type:'新出'};    // 课本筛选（课/单元/新出·练习）
+let PAGE=1,KANA_SEL='あ';              // 当前页码 / 当前假名段
+let BK={lesson:'',unit:'',type:'新出'};    // 课本顺序的筛选条件
 const PER=20;                          // 每页条数
 
-/* 五十音图表：清音+浊音+半浊音分行；「其他」放非假名开头（- ~ っ 汉字等） */
+/* 五十音图：用于假名顺序页的段落导航下拉 */
 const KANA_ROWS=[['あ行','あいうえお'],['か行','かがきぎくぐけげこご'],['さ行','さざしじすずせぜそぞ'],['た行','ただちぢつづてでとど'],['な行','なにぬねの'],['は行','はばぱひびぴふぶぷへべぺほぼぽ'],['ま行','まみむめも'],['や行','やゆよ'],['ら行','らりるれろ'],['わ行','わをん']];
-const KANA_CHARS=KANA_ROWS.map(r=>r[1]).join('');
-const KANA_SEGS=[...KANA_CHARS,'其他'];
+const KANA_CHARS=KANA_ROWS.map(r=>r[1]).join('');   // 所有假名字符连成一串，用于判断归属
+const KANA_SEGS=[...KANA_CHARS,'其他'];             // 段落列表（含「其他」兜底）
 
-/* ---------- 单词数据：从后端 API 拉取 ---------- */
+
+/* ============================================================
+   单词数据：从后端 API 拉取并缓存到全局 W
+   ============================================================ */
+
 async function loadWords(order,book){
   W_BOOK=book||W_BOOK;
   W_LOADING=true;draw();
   try{
     const data=await (await fetch(`/api/words?order=${order}&book=${W_BOOK}`)).json();
     W=data.words.map(w=>({
-      id:w.id,
+      id:w.id,   // 注意：必须包含 id，toggleFav 靠它找词条
       word:w.word, pron:w.pron||'', accent:w.accent||'', pos:w.pos||'', meaning:w.meaning||'',
       source:`第${w.lesson||'-'}课·Unit${w.unit||'-'}${w.source_type?'·'+w.source_type:''}`,
       kana:w.kana||'', lesson:w.lesson, unit:w.unit, type:w.source_type||''
@@ -43,6 +85,8 @@ async function loadWords(order,book){
   }catch(e){ W=[]; }
   W_LOADING=false;draw();
 }
+
+/* 切换单词页 tab，必要时触发数据加载 */
 function switchTab(t){
   S.t=t; PAGE=1;
   if(t==='kana')loadWords('kana',3);
@@ -51,7 +95,7 @@ function switchTab(t){
   else draw();
 }
 
-/* 假名段归属 / 列表 / 分页 */
+/* ---------- 单词列表过滤 / 分页辅助 ---------- */
 function segOf(kana){ const c=(kana||'')[0]; return KANA_CHARS.includes(c)?c:'其他'; }
 function kanaList(){ return W.filter(x=>segOf(x.kana)===KANA_SEL); }
 function bookList(){
@@ -61,6 +105,8 @@ function bookList(){
     (!BK.type||x.type===BK.type));
 }
 function totalPages(){ const L=S.t==='kana'?kanaList():bookList(); return Math.max(1,Math.ceil(L.length/PER)); }
+
+/* 下一页；假名顺序到末尾时自动跳下一个假名段 */
 function nextPage(){
   const pages=totalPages();
   if(PAGE<pages){ PAGE++; draw(); return; }
@@ -72,14 +118,15 @@ function nextPage(){
 function lessons(){ return [...new Set(W.map(x=>x.lesson).filter(v=>v!=null))].sort((a,b)=>a-b); }
 function units(){ return [...new Set(W.filter(x=>!BK.lesson||x.lesson===BK.lesson).map(x=>x.unit).filter(v=>v!=null))].sort((a,b)=>a-b); }
 
-/* 假名表下拉（分行 optgroup） */
+/* 假名段下拉（分行 optgroup） */
 function kanaSelect(){
   return `<select onchange="KANA_SEL=this.value;PAGE=1;draw()">
     ${KANA_ROWS.map(([g,cs])=>`<optgroup label="${g}">${[...cs].map(c=>`<option ${KANA_SEL===c?'selected':''}>${c}</option>`).join('')}</optgroup>`).join('')}
     <option ${KANA_SEL==='其他'?'selected':''}>其他</option>
   </select>`;
 }
-/* 课本顺序筛选器：册下拉 + 第_课下拉 + Unit_下拉 + 新出/练习下拉 */
+
+/* 课本顺序工具栏：册 / 课 / Unit / 新出·练习 四个下拉 */
 const BOOK_NAMES = ['综合日语 第一册','综合日语 第二册','综合日语 第三册','综合日语 第四册'];
 function bookSelects(){
   return `
@@ -105,7 +152,12 @@ function bookSelects(){
     </select>`;
 }
 
-/* ---------- 导航 ---------- */
+
+/* ============================================================
+   导航栏 / 页面框架
+   ============================================================ */
+
+/* 顶部导航条（所有内页通用） */
 function nav(){
   return `<header class="home-nav">
     <div class="grade-control">
@@ -128,9 +180,10 @@ function nav(){
   </header>`;
 }
 
+/* 渲染一个内页：套上 nav + <main>，并绑定点击外部关闭下拉 */
 function box(x){ A.innerHTML=`<main>${nav()}${x}</main>`; attachMenuClose(); }
 
-/* 点击导航外区域关闭下拉 */
+/* 用户菜单打开时，点击外部区域自动关闭 */
 function attachMenuClose(){
   document.addEventListener('click', function handler(e){
     if(S.usermenu && !e.target.closest('.user-wrap')){
@@ -140,7 +193,7 @@ function attachMenuClose(){
   }, {once:true, capture:true});
 }
 
-/* ---------- 内页 header：返回箭头 + 页面标题，无 tabs ---------- */
+/* 内页顶部：返回箭头 + 页面标题（中文 + 英文副标题） */
 function title(c,e,back){
   return `<section class="page"><div class="head">
     <div class="head-left">
@@ -152,7 +205,10 @@ function title(c,e,back){
   </div>`;
 }
 
-/* ---------- 首页 ---------- */
+
+/* ============================================================
+   首页
+   ============================================================ */
 function home(){
   const modules=[
     ['assets/icon-words.png','单词','单词表查看与抽测','words'],
@@ -160,8 +216,9 @@ function home(){
     ['assets/icon-resources.png','资源','电子课本与下载','resources'],
     ['assets/icon-homework.png','作业','小试牛刀','homework']
   ];
+  // 彩纸屑粒子（party 动画用）
   const conf = Array.from({length:32},(_,i)=>`<i style="--i:${i};--x:${(i%8-3.5)*34}px;--y:${-120-(i%4)*30}px;--r:${(i%9-4)*28}deg;--d:${(i%7)*.03}s"></i>`).join('');
-  // SVG：写意鸭川场景，水平构图，融入点阵底色
+  // 鸭川场景 SVG（纯装饰）
   const riverSvg = `<svg class="river-scene" viewBox="0 0 520 260" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
     <!-- 水面底色晕染，大椭圆，中心实边缘散 -->
     <radialGradient id="waterGlow" cx="50%" cy="52%" r="52%">
@@ -228,7 +285,7 @@ function home(){
       <div class="homegrid">
         <div class="intro">
           <div class="intro-inner">
-            <p class="quiet-copy">清华大学 · 日語専攻ポータル</p>
+            <p class="quiet-copy">言葉の勉強は「日々の努力の積み重ね」です！</p>
             <div class="portals">
               ${modules.map(x=>`
                 <button onclick="go('${x[3]}')">
@@ -259,7 +316,14 @@ function home(){
     </section>`);
 }
 
-/* ---------- 搜索框（独立块，用于个人中心） ---------- */
+
+/* ============================================================
+   单词搜索（行内搜索框 + 下拉候选 + 键盘导航）
+   ============================================================
+   设计要点：输入框不参与 draw() 重建（只更新下拉），避免
+   中文输入法被打断。updateDrop() 只刷新 #searchdrop 节点。 */
+
+/* 旧版搜索框（个人中心用，跳转到词条） */
 function search(k){
   const r = S.q ? W.filter(x=>[x.word,x.pron,x.pos,x.meaning,x.source,x.kana].join(' ').includes(S.q)).slice(0,5) : [];
   return `<div class="search">
@@ -268,7 +332,7 @@ function search(k){
   </div>`;
 }
 
-/* ---------- 搜索评分（越高越匹配） ---------- */
+/* 模糊匹配评分：精确全等=100，前缀=80，包含=60，字符顺序=30 */
 function searchScore(w, q){
   const Q = q.toLowerCase();
   const fields = [w.word, w.pron, w.kana, w.meaning];
@@ -280,7 +344,7 @@ function searchScore(w, q){
     if(s.startsWith(Q))     best = Math.max(best, 80);
     else if(s.includes(Q))  best = Math.max(best, 60);
     else {
-      // 字符级模糊：Q中每个字符都在 s 中按顺序出现
+      // 字符级模糊：Q 中每个字符都在 s 中按顺序出现
       let i = 0;
       for(const c of Q){ const idx = s.indexOf(c, i); if(idx===-1){ i=-1; break; } i=idx+1; }
       if(i !== -1) best = Math.max(best, 30);
@@ -289,9 +353,8 @@ function searchScore(w, q){
   return best;
 }
 
-/* 搜索候选（带评分排序，最多5条） */
-let SEARCH_SEL = -1;   // 当前键盘选中项 index
-
+/* 取评分最高的前 5 条候选 */
+let SEARCH_SEL = -1;   // 键盘上下键选中的候选项 index
 function searchCandidates(){
   if(!S.q) return [];
   return W
@@ -302,39 +365,33 @@ function searchCandidates(){
     .map(x => x.w);
 }
 
-/* 跳转到课本顺序，定位该词条并高亮 */
+/* 点击候选项后，切换到课本顺序并定位该词、滚动高亮 */
 function jumpToWord(targetWord){
   S.q = '';
   SEARCH_SEL = -1;
-
-  // 切换到课本顺序，清掉筛选
   S.t = 'book';
   BK = { lesson: '', unit: '', type: '' };
 
   function scrollToTarget(){
-    // W 已加载完毕后，在 bookList() 里定位
     const list = bookList();
     const pos = list.findIndex(x => x.word === targetWord);
     if(pos === -1) return;
     PAGE = Math.floor(pos / PER) + 1;
     draw();
-    // draw() 是同步的，DOM 立即更新
     const cur = list.slice((PAGE-1)*PER, PAGE*PER);
     const rowIdx = cur.findIndex(x => x.word === targetWord);
     const el = document.querySelector('#w' + rowIdx);
     if(el){
       el.classList.remove('flash');
-      void el.offsetWidth; // 强制回流，让动画重新触发
+      void el.offsetWidth; // 强制回流，让 CSS 动画重新触发
       el.classList.add('flash');
       el.scrollIntoView({ block: 'center', behavior: 'smooth' });
     }
   }
 
   if(S.t === 'book' && W.length && !W_LOADING){
-    // 已经是课本顺序且数据在，直接定位
     scrollToTarget();
   } else {
-    // 需要加载数据
     const orig = W_BOOK;
     W_LOADING = true; draw();
     fetch(`/api/words?order=book&book=${orig}`)
@@ -353,10 +410,8 @@ function jumpToWord(targetWord){
   }
 }
 
-/* 行内搜索框（单词页工具栏内）
-   关键：输入框永远不参与 draw() 重建，只有下拉列表局部更新 */
+/* 行内搜索框 HTML（输入框不重建，下拉单独刷新） */
 let _composing = false;
-
 function searchInline(){
   return `<div class="search-inline" id="srchwrap">
     <input id="srchinput"
@@ -372,7 +427,7 @@ function searchInline(){
   </div>`;
 }
 
-/* 只刷新下拉，不碰输入框 */
+/* 只刷新候选下拉，不碰输入框（防止中文输入法被打断） */
 function updateDrop(val){
   S.q = val;
   SEARCH_SEL = -1;
@@ -391,7 +446,7 @@ function updateDrop(val){
     </button>`).join('');
 }
 
-/* 关键词高亮 */
+/* 匹配片段加 <em> 高亮 */
 function highlight(text, q){
   if(!q||!text) return text;
   const Q=q.toLowerCase(), s=text.toLowerCase(), idx=s.indexOf(Q);
@@ -400,7 +455,7 @@ function highlight(text, q){
 }
 function truncate(s,n){ return s&&s.length>n?s.slice(0,n)+'…':(s||''); }
 
-/* 键盘导航 */
+/* 上下键选候选，Enter 跳转，Esc 清空 */
 function handleSearchKey(e){
   const cands = searchCandidates();
   const items = document.querySelectorAll('#searchdrop .sdrop-item');
@@ -431,7 +486,12 @@ function restoreFocus(){
   const el=document.querySelector('#srchinput'); if(el){ el.focus(); }
 }
 
-/* ---------- 单词行 ---------- */
+
+/* ============================================================
+   单词表格行 / 收藏按钮
+   ============================================================ */
+
+/* 生成表格 <tr> 列表 HTML */
 function rows(list,src=true,del=false,showFavMark=false){
   return list.map((w,i)=>{
     const k=w.word;
@@ -448,17 +508,18 @@ function rows(list,src=true,del=false,showFavMark=false){
   }).join('');
 }
 
-/* 收藏 / 取消收藏（接入真实 API） */
+/* 收藏 / 取消收藏
+   策略：本地 S.fav 和 MY_WORDS 立即响应（乐观更新），
+   然后异步发 POST，失败时回滚。 */
 function toggleFav(wordId, wordKey){
   const isFav = S.fav.has(wordKey);
   const action = isFav ? 'remove' : 'add';
-  // 本地立即响应：更新收藏 Set
+  // 1. 立即更新本地收藏 Set
   isFav ? S.fav.delete(wordKey) : S.fav.add(wordKey);
 
-  // 同步更新 MY_WORDS（个人中心单词本）
+  // 2. 同步更新个人中心单词本缓存
   if(MY_WORDS !== null){
     if(action === 'add'){
-      // 追加：从全局词列表找到完整词信息
       const wObj = W.find(w => w.id === wordId);
       if(wObj){
         const existing = MY_WORDS.find(w => w.id === wordId);
@@ -473,7 +534,7 @@ function toggleFav(wordId, wordKey){
         }
       }
     } else {
-      // 取消收藏：清 fav_at；若也无 wrong_at 则移出列表
+      // 取消：清 fav_at；若也无 wrong_at 则移出列表
       const existing = MY_WORDS.find(w => w.id === wordId);
       if(existing){
         existing.fav_at = null;
@@ -484,21 +545,23 @@ function toggleFav(wordId, wordKey){
 
   draw();
 
-  // 后端同步
+  // 3. 后端同步（失败时回滚）
   fetch('/api/favorites', {
     method: 'POST',
     headers: {'Content-Type':'application/json'},
     body: JSON.stringify({user_id: UID, word_id: wordId, action}),
   }).catch(e=>{
-    // 回滚
     isFav ? S.fav.add(wordKey) : S.fav.delete(wordKey);
-    MY_WORDS = null;   // 回滚时重置缓存让下次重拉
+    MY_WORDS = null;   // 缓存作废，下次重新拉
     draw();
     console.error('收藏操作失败', e);
   });
 }
 
-/* ---------- 单词 ---------- */
+
+/* ============================================================
+   单词页
+   ============================================================ */
 function words(){
   const test = S.t==='test';
   let body;
@@ -551,7 +614,10 @@ function words(){
   }
 }
 
-/* ---------- 抽查：测试记录列表 ---------- */
+
+/* ============================================================
+   抽查：历史记录列表
+   ============================================================ */
 function tests(){
   if(QZ && !QZ.submitted) return quizPage();
   if(QZ && QZ.submitted)  return quizResult();
@@ -565,7 +631,8 @@ function tests(){
   </div>`;
 }
 
-/* 异步加载历史并注入 DOM，不重建整页 */
+/* 异步加载测试历史，直接注入 #quiz-history-wrap，不重建整页
+   （避免切 tab 时整页闪烁） */
 function loadQuizHistory(){
   const wrap = document.querySelector('#quiz-history-wrap');
   if(!wrap) return;
@@ -594,21 +661,21 @@ function loadQuizHistory(){
     .catch(()=>{ if(wrap) wrap.innerHTML=`<div class="empty"><p>加载失败，请检查网络。</p></div>`; });
 }
 
-/* ---------- 开始抽查：发 API ---------- */
-/* 异步查询当前范围内的词数，更新 S.mTotalCount 并刷新界面 */
+
+/* ============================================================
+   抽查：新建测试 / 答题 / 结果
+   ============================================================ */
+
+/* 防抖查询当前范围内可出题词数，结果写入 S.mTotalCount 并刷新 */
 let _countTimer = null;
 function fetchQuizCount(){
-  // 防抖：100ms 内多次调用只发一次请求
   clearTimeout(_countTimer);
   _countTimer = setTimeout(()=>{
     const book     = S.mBook;
     const isMyBook = book === '我的单词本';
     if(!book || !S.mMode) return;
 
-    const p = new URLSearchParams({
-      user_id: UID,
-      mode:    S.mMode,
-    });
+    const p = new URLSearchParams({ user_id: UID, mode: S.mMode });
     if(isMyBook){
       p.set('scope', S.mScope || 'all');
     } else {
@@ -628,22 +695,18 @@ function fetchQuizCount(){
   }, 100);
 }
 
+/* 确认新建：POST /api/quiz/start，拿回题目列表存入 QZ */
 function startQuiz(){
   const book   = S.mBook;
   const isMyBook = book === '我的单词本';
   const name   = S.mName.trim() || '未命名测试';
   const qty    = S.mQty==='全部' ? null : S.mQty==='自定义' ? (+S.mCustom||20) : +S.mQty;
 
-  const body = {
-    user_id: UID,
-    name,
-    mode: S.mMode,
-    qty,
-  };
+  const body = { user_id: UID, name, mode: S.mMode, qty };
   if(isMyBook){
     body.scope = S.mScope || 'all';
   } else {
-    body.book     = BOOK_NUM[book] || 3;
+    body.book      = BOOK_NUM[book] || 3;
     body.from_lesson = S.mFromL;
     body.from_unit   = S.mFromU;
     body.to_lesson   = S.mToL;
@@ -651,8 +714,7 @@ function startQuiz(){
   }
 
   S.modal = false;
-  S.mName = '';   // 下次打开 modal 名称清空
-  // 先 draw 显示"加载中"
+  S.mName = '';
   QZ = { loading: true };
   draw();
 
@@ -670,17 +732,17 @@ function startQuiz(){
       mode:       data.mode,
       modeLabel:  data.mode_label,
       qIdx:       0,
-      answers:    [],  // [{word_id, mode, user_answer, correct_answer, is_correct}]
+      answers:    [],
       submitted:  false,
       result:     null,
-      startTime:  Date.now(),   // 用于计算用时
+      startTime:  Date.now(),   // 记录开始时间，用于计算用时
     };
     draw();
   })
   .catch(e=>{ alert('网络错误：'+e); QZ=null; draw(); });
 }
 
-/* ---------- 答题页 ---------- */
+/* 答题页 HTML */
 function quizPage(){
   if(QZ.loading) return `<div class="empty"><p>加载中…</p></div>`;
 
@@ -689,8 +751,6 @@ function quizPage(){
   const idx   = QZ.qIdx;
   const pct   = Math.round(idx / total * 100);
   const isLast = idx === total - 1;
-
-  // 上一题已答的内容（回顾用）
   const prevAns = QZ.answers[idx] ? QZ.answers[idx].user_answer : '';
 
   return `
@@ -715,7 +775,7 @@ function quizPage(){
   </div>`;
 }
 
-/* 下一题/提交 */
+/* 提交当前题答案，前端判分，移到下一题；最后一题则触发整体提交 */
 function submitOne(){
   const inp = document.querySelector('#quiz-ans');
   const val = inp ? inp.value.trim() : '';
@@ -723,11 +783,8 @@ function submitOne(){
   const is_correct = judgeAnswer(QZ.mode, val, q.correct_answer);
 
   QZ.answers[QZ.qIdx] = {
-    word_id:        q.word_id,
-    mode:           QZ.mode,
-    user_answer:    val,
-    correct_answer: q.correct_answer,
-    is_correct,
+    word_id: q.word_id, mode: QZ.mode,
+    user_answer: val, correct_answer: q.correct_answer, is_correct,
   };
 
   if(QZ.qIdx < QZ.questions.length - 1){
@@ -735,72 +792,56 @@ function submitOne(){
     draw();
     setTimeout(()=>{ const el=document.querySelector('#quiz-ans'); if(el) el.focus(); }, 0);
   } else {
-    // 全部答完，提交
     submitQuiz();
   }
 }
 
-/* 上一题 */
 function quizBack(){
   if(QZ.qIdx > 0){ QZ.qIdx--; draw(); }
 }
 
-/* 前端判分（与后端 judge 逻辑保持一致） */
+/* 前端判分（与后端 judge() 逻辑保持一致）
+   - 释义类：用 ';' 分隔多义项，用户答案须与某完整义项完全相等
+   - 其他类：用 '/' 分隔多选项（如 '0/1'），任一完全匹配即可 */
 function judgeAnswer(mode, userAns, correctAns){
-  // 全角→半角，去首尾空白
   const norm = s => (s||'').trim().replace(/[！-～]/g, c=>String.fromCharCode(c.charCodeAt(0)-0xFEE0));
   const ua = norm(userAns);
   if(!ua) return false;
-
   if(['word2meaning','gairaigo_jp2cn'].includes(mode)){
-    // 释义：';' 分隔多义项，用户答案须与某完整义项完全相等（不接受子串）
     return correctAns.split(';').map(norm).filter(Boolean).includes(ua);
   }
-  // 假名、外来语单词、音调：严格全等；'/' 分隔时任一匹配即可
   return correctAns.split('/').map(norm).filter(Boolean).includes(ua);
 }
 
-/* 提交整次测试 */
+/* 整体提交：POST /api/quiz/submit，拿回最终得分存入 QZ.result */
 function submitQuiz(){
   QZ.submitted  = true;
   QZ.submitting = true;
-  QZ.elapsed    = Math.round((Date.now() - (QZ.startTime || Date.now())) / 1000); // 秒
+  QZ.elapsed    = Math.round((Date.now() - (QZ.startTime || Date.now())) / 1000);
   draw();
 
   fetch('/api/quiz/submit', {
     method: 'POST',
     headers: {'Content-Type':'application/json'},
-    body: JSON.stringify({
-      session_id: QZ.sessionId,
-      user_id:    UID,
-      answers:    QZ.answers,
-    }),
+    body: JSON.stringify({ session_id: QZ.sessionId, user_id: UID, answers: QZ.answers }),
   })
   .then(r=>r.json())
-  .then(data=>{
-    QZ.submitting = false;
-    QZ.result = data;
-    draw();
-  })
+  .then(data=>{ QZ.submitting = false; QZ.result = data; draw(); })
   .catch(e=>{ QZ.submitting=false; alert('提交失败：'+e); QZ.submitted=false; draw(); });
 }
 
-/* ---------- 结果页 ---------- */
+/* 结果页：显示得分、答题点阵、答错的题目明细 */
 function quizResult(){
   if(QZ.submitting) return `<div class="empty"><p>提交中…</p></div>`;
 
-  const r = QZ.result;
-  // 以本地 answers 为准（忽略操作会在本地同步更新）
+  // 以本地 answers 为准（忽略操作在本地同步，不依赖后端返回值）
   const localCorrect = QZ.answers.filter(a=>!a.ignored && a.is_correct).length
                      + QZ.answers.filter(a=> a.ignored).length;
   const total   = QZ.answers.length;
   const score   = total ? Math.round(localCorrect / total * 100) : 0;
 
-  // 用时格式化
   const sec = QZ.elapsed || 0;
-  const timeStr = sec >= 60
-    ? `${Math.floor(sec/60)} 分 ${sec%60} 秒`
-    : `${sec} 秒`;
+  const timeStr = sec >= 60 ? `${Math.floor(sec/60)} 分 ${sec%60} 秒` : `${sec} 秒`;
 
   const wrongItems = QZ.answers.filter(a => !a.is_correct && !a.ignored);
 
@@ -844,43 +885,38 @@ function quizResult(){
   </div>`;
 }
 
-/* 忽略某道答错的题（前端标记 + 调后端接口撤销错词） */
+/* 忽略某道答错的题：前端立即标记 + 异步通知后端撤销错词 */
 function overrideAnswer(wordId){
   const ans = QZ.answers.find(a => a.word_id === wordId);
   if(!ans || ans.is_correct || ans.ignored) return;
-
-  ans.ignored = true;   // 前端立即生效
+  ans.ignored = true;
   draw();
-
   fetch('/api/quiz/override', {
     method: 'POST',
     headers: {'Content-Type':'application/json'},
-    body: JSON.stringify({
-      session_id: QZ.sessionId,
-      user_id:    UID,
-      word_id:    wordId,
-    }),
+    body: JSON.stringify({ session_id: QZ.sessionId, user_id: UID, word_id: wordId }),
   })
   .then(r=>r.json())
   .then(data=>{ if(!data.ok) console.warn('override failed', data); })
   .catch(e=>console.error('override error', e));
 }
 
-/* 查看历史测试详情（占位，后续完善） */
+/* 查看历史测试详情（暂用 alert，后续做详情页） */
 function viewSession(id){
   fetch(`/api/quiz/session/${id}?user_id=${UID}`)
     .then(r=>r.json())
     .then(data=>{
       const s = data.session;
-      const answers = data.answers;
-      const wrong = answers.filter(a=>!a.is_correct);
+      const wrong = data.answers.filter(a=>!a.is_correct);
       alert(`「${s.name}」\n题型：${s.mode_label}\n得分：${s.correct}/${s.total}（${s.score}%）\n答错 ${wrong.length} 道`);
     })
     .catch(()=>alert('加载失败'));
 }
 
 
-/* ---------- 新建测试弹窗 ---------- */
+/* ============================================================
+   新建测试弹窗
+   ============================================================ */
 function modal(){
   const isLoan   = S.mMode.startsWith('gairaigo');
   const isCustom = S.mQty  === '自定义';
@@ -892,7 +928,6 @@ function modal(){
   const lessons = Array.from({length:maxL},(_,i)=>i+1);
   const units   = Array.from({length:maxU},(_,i)=>i+1);
 
-  // 范围下拉选项
   function lessonOpts(cur){ return lessons.map(n=>`<option ${cur===n?'selected':''}>${n}</option>`).join(''); }
   function unitOpts(cur){   return units.map(n=>`<option ${cur===n?'selected':''}>${n}</option>`).join(''); }
 
@@ -991,42 +1026,223 @@ function modal(){
   </div>`;
 }
 
-/* ---------- 精读 ---------- */
+
+/* ============================================================
+   精读页
+   ============================================================
+   数据流：
+     rdLoadLessons() → 拉课号列表存 RD_LESSONS
+     rdLoadSentences() → 拉句子存 RD_SENTENCES，然后 rdInitAudio()
+     rdInitAudio() → 创建 Audio 对象，注册 timeupdate 事件
+   播放逻辑：
+     顶部按钮 → rdTogglePlay()
+     点击句子 → rdPlaySentence(i) → 设 currentTime = start，play()
+     timeupdate 事件 → rdOnTimeUpdate() → 高亮当前句 + 刷新进度条
+   ============================================================ */
+
+/* 拉取当前册的课号列表（只在首次进入或换册时调用） */
+function rdLoadLessons(){
+  if(RD_LESSONS!==null||RD_LOADING)return;
+  RD_LOADING=true;
+  fetch(`/api/reading/lessons?book=${S.rBook}`)
+    .then(r=>r.json()).then(d=>{
+      RD_LESSONS=d.lessons||[];
+      RD_LOADING=false;
+      if(RD_LESSONS.length && !RD_LESSONS.find(l=>l.lesson===S.rLesson)){
+        S.rLesson=RD_LESSONS[0].lesson;
+      }
+      rdLoadSentences();
+    }).catch(()=>{RD_LOADING=false;draw();});
+}
+
+/* 拉取当前课的句子数据，完成后初始化音频 */
+function rdLoadSentences(){
+  RD_SENTENCES=null; RD_LOADING=true; draw();
+  fetch(`/api/reading/sentences?book=${S.rBook}&lesson=${S.rLesson}`)
+    .then(r=>r.json()).then(d=>{
+      RD_SENTENCES=d.sentences||[];
+      RD_LOADING=false;
+      draw();
+      rdInitAudio();
+    }).catch(()=>{RD_LOADING=false;draw();});
+}
+
+/* 初始化 Audio 对象
+   音频文件在服务器 /home/Source/audio/...，通过后端代理 /api/audio/... 访问。
+   同一文件不重建（换课时先销毁再建）。 */
+function rdInitAudio(){
+  if(!RD_SENTENCES||!RD_SENTENCES.length)return;
+  const src=RD_SENTENCES[0].source_file;
+  const proxyUrl='/api/audio/'+src.replace(/^.*\/audio\//,'');
+  if(RD_AUDIO&&RD_AUDIO._rdSrc===proxyUrl)return;
+  if(RD_AUDIO){RD_AUDIO.pause();RD_AUDIO.src='';}
+  RD_AUDIO=new Audio(proxyUrl);
+  RD_AUDIO._rdSrc=proxyUrl;
+  RD_AUDIO.addEventListener('timeupdate',rdOnTimeUpdate);
+  // loadedmetadata：浏览器读到 duration 后立即刷新控制条显示真实时长
+  RD_AUDIO.addEventListener('loadedmetadata',rdDrawControls);
+  RD_AUDIO.addEventListener('ended',()=>{S.rActiveSentence=-1;rdDrawControls();});
+}
+
+/* timeupdate 回调：约每 250ms 触发一次
+   - 同步进度条宽度
+   - 查找当前时间落在哪个句子的 [start, end) 区间
+   - 有变化时切换高亮 class，并滚动进视口 */
+function rdOnTimeUpdate(){
+  if(!RD_SENTENCES||!RD_AUDIO)return;
+  const t=RD_AUDIO.currentTime;
+  const fill=document.getElementById('rd-fill');
+  if(fill&&RD_AUDIO.duration)
+    fill.style.width=(t/RD_AUDIO.duration*100)+'%';
+  let idx=-1;
+  for(let i=0;i<RD_SENTENCES.length;i++){
+    const s=RD_SENTENCES[i];
+    if(s.seq>1&&t>=s.start&&t<s.end){idx=i;break;}
+  }
+  if(idx!==S.rActiveSentence){
+    S.rActiveSentence=idx;
+    document.querySelectorAll('.rd-sentence').forEach((el,i)=>{
+      el.classList.toggle('rd-active',i===idx);
+    });
+    if(idx>=0){
+      const el=document.querySelectorAll('.rd-sentence')[idx];
+      if(el)el.scrollIntoView({behavior:'smooth',block:'nearest'});
+    }
+  }
+  rdDrawControls();
+}
+
+/* 只刷新控制条的按钮图标和时间文字（不重绘整页） */
+function rdDrawControls(){
+  const bar=document.getElementById('rd-ctrl');
+  if(!bar||!RD_AUDIO)return;
+  const paused=RD_AUDIO.paused;
+  const cur=RD_AUDIO.currentTime||0;
+  const dur=RD_AUDIO.duration||0;
+  bar.querySelector('.rd-btn').textContent=paused?'▶':'⏸';
+  bar.querySelector('.rd-time').textContent=`${rdFmt(cur)} / ${rdFmt(dur)}`;
+}
+
+/* 秒 → m:ss 格式 */
+function rdFmt(s){
+  if(!s||isNaN(s))return'0:00';
+  const m=Math.floor(s/60),sec=Math.floor(s%60);
+  return `${m}:${sec.toString().padStart(2,'0')}`;
+}
+
+function rdTogglePlay(){
+  if(!RD_AUDIO)return;
+  if(RD_AUDIO.paused) RD_AUDIO.play().catch(()=>{});
+  else RD_AUDIO.pause();
+  rdDrawControls();
+}
+
+/* 点击某句 → 跳到该句的 start_time 播放，并立即高亮 */
+function rdPlaySentence(idx){
+  if(!RD_AUDIO||!RD_SENTENCES)return;
+  const s=RD_SENTENCES[idx];
+  if(!s||s.seq===1)return;
+  RD_AUDIO.currentTime=s.start;
+  RD_AUDIO.play().catch(()=>{});
+  S.rActiveSentence=idx;
+  document.querySelectorAll('.rd-sentence').forEach((el,i)=>
+    el.classList.toggle('rd-active',i===idx));
+  rdDrawControls();
+}
+
+/* 换册：清空所有缓存，重新拉课号列表 */
+function rdChangeBook(val){
+  S.rBook=parseInt(val);
+  RD_LESSONS=null; RD_SENTENCES=null; S.rActiveSentence=-1;
+  if(RD_AUDIO){RD_AUDIO.pause();RD_AUDIO.src='';}
+  RD_AUDIO=null;
+  rdLoadLessons();
+}
+
+/* 换课：清空句子缓存，重新拉句子 */
+function rdChangeLesson(val){
+  S.rLesson=parseInt(val);
+  RD_SENTENCES=null; S.rActiveSentence=-1;
+  if(RD_AUDIO){RD_AUDIO.pause();RD_AUDIO.src='';}
+  RD_AUDIO=null;
+  rdLoadSentences();
+}
+
+/* 精读页主渲染函数 */
 function reader(){
-  const x=[
-    ['ゆでたまごを作るのは、思ったより簡単です。','煮鸡蛋的制作过程，比想象中更简单。'],
-    ['まず鍋に水を入れて、火にかけます。','首先，在锅中加水并开火。'],
-    ['水が沸いたら、卵をそっと入れます。','水沸腾后，轻轻将鸡蛋放入锅中。'],
-    ['七分ほど待てば、できあがりです。','等待大约七分钟，就完成了。'],
-    ['ゆでたまごには栄養がたっぷり含まれています。','煮鸡蛋含有丰富的营养成分。'],
-  ];
+  if(RD_LESSONS===null&&!RD_LOADING) rdLoadLessons();
+
+  const bookOpts=[1,2,3,4].map(b=>
+    `<option value="${b}" ${S.rBook===b?'selected':''}>综合日语 第${['一','二','三','四'][b-1]}册</option>`
+  ).join('');
+
+  const lessonOpts=(RD_LESSONS||[]).map(l=>
+    `<option value="${l.lesson}" ${S.rLesson===l.lesson?'selected':''}>第${l.lesson}课</option>`
+  ).join('');
+
+  // seq=1 是标题，seq>1 是正文句子
+  const titleSentence=RD_SENTENCES?RD_SENTENCES.find(s=>s.seq===1):null;
+  const bodySentences=RD_SENTENCES?RD_SENTENCES.filter(s=>s.seq>1):[];
+
+  let articleHtml='';
+  if(RD_LOADING){
+    articleHtml='<p class="rd-loading">加载中…</p>';
+  } else if(!RD_SENTENCES){
+    articleHtml='<p class="rd-hint">请选择课程</p>';
+  } else {
+    // 所有正文句子连续写进同一个 <p>，每句是可点击的 <span>
+    const spans=bodySentences.map((s,i)=>{
+      const isActive=(i===S.rActiveSentence);
+      return `<span class="rd-sentence${isActive?' rd-active':''}" onclick="rdPlaySentence(${i})" title="点击播放">${s.text}</span>`;
+    }).join('');
+    articleHtml=`${titleSentence?`<h3 class="rd-title">${titleSentence.text}</h3>`:''}
+      <p class="rd-body">${spans}</p>`;
+  }
+
   box(title('精读','Close Reading','home')+`
-    <div class="card">
+    <div class="card rd-card">
       <div class="selects">
-        <select><option>课外补充材料</option><option>综合日语 第一册</option></select>
-        <select><option>ゆでたまご</option><option>字のないはがき</option></select>
+        <select onchange="rdChangeBook(this.value)">${bookOpts}</select>
+        <select onchange="rdChangeLesson(this.value)">${lessonOpts||'<option>加载中…</option>'}</select>
+        <button class="${S.rShowTrans?'on':''}" onclick="S.rShowTrans=!S.rShowTrans;draw()" style="margin-left:8px">展示译文</button>
       </div>
-      <div class="switch">
-        <button class="on">点读</button>
-        <button class="on">翻译</button>
-        <button class="${S.show?'on':''}" onclick="S.show=!S.show;draw()">展示译文</button>
+
+      <div class="rd-ctrl-bar" id="rd-ctrl">
+        <button class="rd-btn" onclick="rdTogglePlay()">▶</button>
+        <div class="rd-progress-wrap" onclick="rdSeekClick(event,this)">
+          <div class="rd-progress-bg"></div>
+          <div class="rd-progress-fill" id="rd-fill" style="width:0%"></div>
+        </div>
+        <span class="rd-time">0:00 / 0:00</span>
       </div>
-      <div class="audio">▶　播放全文　<span></span>　01:16 / 03:28</div>
-      <div class="book">
-        <article>
-          <small>日本語</small>
-          ${x.map((z,i)=>`<p onmouseenter="pair(${i})">${z[0]}</p>`).join('')}
-        </article>
-        ${S.show?`<article>
+
+      <div class="rd-article-wrap">
+        <div class="rd-article">
+          ${articleHtml}
+        </div>
+        ${S.rShowTrans?`<div class="rd-trans">
           <small>中文译文</small>
-          ${x.map((z,i)=>`<p onmouseenter="pair(${i})">${z[1]}</p>`).join('')}
-        </article>`:''}
+          <p class="rd-hint" style="padding-top:8px">（翻译内容即将上线）</p>
+        </div>`:''}
       </div>
     </div>
   </section>`);
 }
 
-/* ---------- 资源 ---------- */
+/* 进度条点击跳转：算点击位置占总宽度的比例，换算成时间 */
+function rdSeekClick(e,bar){
+  if(!RD_AUDIO||!RD_AUDIO.duration)return;
+  const rect=bar.getBoundingClientRect();
+  const ratio=(e.clientX-rect.left)/rect.width;
+  RD_AUDIO.currentTime=ratio*RD_AUDIO.duration;
+  if(RD_AUDIO.paused) RD_AUDIO.play().catch(()=>{});
+  rdDrawControls();
+}
+
+
+/* ============================================================
+   资源页（静态占位）
+   ============================================================ */
 function resources(){
   const x=[
     ['教材',['综合日语 第一册','综合日语 第二册','综合日语 第三册','综合日语 第四册','口译教程','新经典听力教室','塞罕坝']],
@@ -1049,28 +1265,28 @@ function resources(){
   </section>`);
 }
 
-/* ---------- 个人中心 ---------- */
 
-// 单词本缓存（收藏 + 错词 合并）
-let MY_WORDS = null;   // null=未加载
+/* ============================================================
+   个人中心
+   ============================================================ */
 
+let MY_WORDS = null;   // 单词本缓存，null=未加载，[]=空
+
+/* 从后端拉取收藏+错词合并列表 */
 function loadMyWords(){
   fetch(`/api/favorites?user_id=${UID}&scope=all`)
     .then(r=>r.json())
-    .then(data=>{
-      MY_WORDS = data.words || [];
-      draw();
-    })
+    .then(data=>{ MY_WORDS = data.words || []; draw(); })
     .catch(()=>{ MY_WORDS = []; draw(); });
 }
 
 function profile(){
-  // 切换到单词本页时自动加载
   if(S.pro==='words' && MY_WORDS === null){
     MY_WORDS = [];   // 防重复请求
     setTimeout(loadMyWords, 0);
   }
 
+  // 根据 profileQ 过滤（不影响主词表搜索 S.q）
   const wList = S.profileQ
     ? (MY_WORDS||[]).filter(w=>
         w.word.includes(S.profileQ)||(w.pron||'').includes(S.profileQ)||(w.meaning||'').includes(S.profileQ))
@@ -1130,7 +1346,7 @@ function profile(){
   </section>`);
 }
 
-/* 从单词本移除一个词（同时清除收藏和错词标记） */
+/* 从单词本移除（同时清收藏和错词标记） */
 function removeMyWord(wordId){
   if(!confirm('确定从单词本移除这个词？（同时清除收藏和错词标记）')) return;
   fetch('/api/favorites', {
@@ -1139,13 +1355,15 @@ function removeMyWord(wordId){
     body: JSON.stringify({user_id: UID, word_id: wordId, action: 'remove'}),
   })
   .then(()=>{
-    // 本地同步移除
     if(MY_WORDS) MY_WORDS = MY_WORDS.filter(w => w.id !== wordId);
     draw();
   });
 }
 
-/* ---------- 作业 ---------- */
+
+/* ============================================================
+   作业 / 题目 / 作业结果（静态占位，后续接入真实数据）
+   ============================================================ */
 function homework(){
   const x = Array.from({length:15},(_,i)=>{
     const n=i+1, s=n<3?'done':n===3?'todo':'none';
@@ -1165,7 +1383,6 @@ function homework(){
   </section>`);
 }
 
-/* ---------- 题目 ---------- */
 function question(){
   const c = S.n===1;
   box(title('第 3 课作业','Lesson 03','homework')+`
@@ -1183,7 +1400,6 @@ function question(){
   </section>`);
 }
 
-/* ---------- 结果 ---------- */
 function result(){
   box(title('作业结果','Lesson 03','homework')+`
     <div class="card result">
@@ -1204,7 +1420,10 @@ function result(){
   </section>`);
 }
 
-/* ---------- 登录 ---------- */
+
+/* ============================================================
+   登录页
+   ============================================================ */
 function login(){
   A.innerHTML=`<main class="login">
     <section>
@@ -1228,7 +1447,12 @@ function login(){
   </main>`;
 }
 
-/* ---------- 交互 ---------- */
+
+/* ============================================================
+   路由 / 渲染 / 工具
+   ============================================================ */
+
+/* 跳转页面：更新 S.p，必要时加载数据 */
 function go(x){
   S.p=x; S.q=''; location.hash=x;
   if(x==='words'){
@@ -1237,16 +1461,24 @@ function go(x){
     else draw();
   } else draw();
 }
+
+/* 核心渲染分发：根据 S.p 调对应渲染函数，写入 #app */
 function draw(){ ({home,words,reader,resources,profile,homework,question,result,login}[S.p]||home)(); }
+
+/* 首页彩纸动画 */
 function party(){
   const w=document.querySelector('#world'), s=document.querySelector('#speech');
   if(!w) return;
   w.classList.remove('party'); void w.offsetWidth; w.classList.add('party');
   s.classList.add('show'); setTimeout(()=>s.classList.remove('show'),2400);
 }
+
+/* 精读旧版用的句子配对高亮（暂留） */
 function pair(n){
   document.querySelectorAll('.book p').forEach((x,i)=>x.classList.toggle('hot', i===n || i===n+5));
 }
 
+/* ---- 启动 ---- */
+// URL hash 决定初始页面（支持直接链接到某页）
 if(location.hash) S.p=location.hash.slice(1);
 if(S.p==='words') loadWords(S.t==='book'?'book':'kana',W_BOOK); else draw();
