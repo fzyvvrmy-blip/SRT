@@ -25,7 +25,7 @@
      rXxx        精读页状态（册号、课号、译文开关、当前高亮句）
    ---------------------------------------------------------- */
 const A=document.querySelector('#app'),S={p:'home',g:'大一',t:'kana',q:'',profileQ:'',fav:new Set(),modal:false,pro:'words',n:1,a:'',show:true,usermenu:false,mBook:'',mFromL:1,mFromU:1,mToL:15,mToU:3,mScope:'fav',mQty:'20',mCustom:'',mMode:'kanji2kana',mTotalCount:null,mName:'',
-  rBook:1,rLesson:5,rShowTrans:false,rActiveSentence:-1};
+  rBook:1,rLesson:5,rShowTrans:false,rActiveSentence:-1,rPlayOne:false};
 
 /* ---------- 精读缓存（模块级变量，不放 S 是因为它们不触发 draw） ---------- */
 let RD_LESSONS=null;    // 课号列表，null=未加载
@@ -1101,12 +1101,21 @@ function rdOnTimeUpdate(){
   }
   if(idx!==S.rActiveSentence){
     S.rActiveSentence=idx;
-    document.querySelectorAll('.rd-sentence').forEach((el,i)=>{
-      el.classList.toggle('rd-active',i===idx);
+    document.querySelectorAll('.rd-sentence').forEach(el=>{
+      el.classList.toggle('rd-active',+el.dataset.idx===idx);
     });
     if(idx>=0){
-      const el=document.querySelectorAll('.rd-sentence')[idx];
+      const el=document.querySelector(`.rd-sentence[data-idx="${idx}"]`);
       if(el)el.scrollIntoView({behavior:'smooth',block:'nearest'});
+    }
+  }
+  // 点读模式：播到当前句的 end 就停，不自动连播下一句
+  if(S.rPlayOne){
+    const cur=RD_SENTENCES[S.rActiveSentence];
+    if(cur && t>=cur.end){
+      RD_AUDIO.pause();
+      RD_AUDIO.currentTime=cur.end;
+      S.rPlayOne=false;
     }
   }
   rdDrawControls();
@@ -1132,6 +1141,7 @@ function rdFmt(s){
 
 function rdTogglePlay(){
   if(!RD_AUDIO)return;
+  S.rPlayOne=false;   // 顶部按钮 = 连续播放整段
   if(RD_AUDIO.paused) RD_AUDIO.play().catch(()=>{});
   else RD_AUDIO.pause();
   rdDrawControls();
@@ -1145,8 +1155,9 @@ function rdPlaySentence(idx){
   RD_AUDIO.currentTime=s.start;
   RD_AUDIO.play().catch(()=>{});
   S.rActiveSentence=idx;
-  document.querySelectorAll('.rd-sentence').forEach((el,i)=>
-    el.classList.toggle('rd-active',i===idx));
+  S.rPlayOne=true;   // 点读模式：播完这一句就停
+  document.querySelectorAll('.rd-sentence').forEach(el=>
+    el.classList.toggle('rd-active',+el.dataset.idx===idx));
   rdDrawControls();
 }
 
@@ -1182,7 +1193,6 @@ function reader(){
 
   // seq=1 是标题，seq>1 是正文句子
   const titleSentence=RD_SENTENCES?RD_SENTENCES.find(s=>s.seq===1):null;
-  const bodySentences=RD_SENTENCES?RD_SENTENCES.filter(s=>s.seq>1):[];
 
   let articleHtml='';
   if(RD_LOADING){
@@ -1191,9 +1201,10 @@ function reader(){
     articleHtml='<p class="rd-hint">请选择课程</p>';
   } else {
     // 所有正文句子连续写进同一个 <p>，每句是可点击的 <span>
-    const spans=bodySentences.map((s,i)=>{
+    const spans=RD_SENTENCES.map((s,i)=>{
+      if(s.seq===1) return '';   // 标题句不作为正文句子渲染
       const isActive=(i===S.rActiveSentence);
-      return `<span class="rd-sentence${isActive?' rd-active':''}" onclick="rdPlaySentence(${i})" title="点击播放">${s.text}</span>`;
+      return `<span class="rd-sentence${isActive?' rd-active':''}" data-idx="${i}" onclick="rdPlaySentence(${i})" title="点击播放">${s.text}</span>`;
     }).join('');
     articleHtml=`${titleSentence?`<h3 class="rd-title">${titleSentence.text}</h3>`:''}
       <p class="rd-body">${spans}</p>`;
@@ -1232,6 +1243,7 @@ function reader(){
 /* 进度条点击跳转：算点击位置占总宽度的比例，换算成时间 */
 function rdSeekClick(e,bar){
   if(!RD_AUDIO||!RD_AUDIO.duration)return;
+  S.rPlayOne=false;   // 进度条拖拽 = 连续播放
   const rect=bar.getBoundingClientRect();
   const ratio=(e.clientX-rect.left)/rect.width;
   RD_AUDIO.currentTime=ratio*RD_AUDIO.duration;
