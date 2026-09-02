@@ -1625,6 +1625,7 @@ mark.tag-wrong {
   padding: 24px 18px 32px;
   border-left: 2px solid #ede8f7;
   font-size: 14px;
+  font-family: "Noto Sans SC", "PingFang SC", sans-serif;
   color: #555;
   overflow-y: auto;
   background: #faf8ff;

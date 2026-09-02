@@ -127,8 +127,13 @@ git pull
 
 ---
 
-## 七、常见问题
+## 七、本地gitpush之后如何同步到服务器？
+# 1. 停掉正在跑的旧服务
+pkill -f "python3.11 app.py"
 
-- **`python app.py` 报 `ModuleNotFoundError: psycopg2`**：依赖没装，先 `pip install -r backend/requirements.txt`。
-- **网页没数据 / 报数据库连不上**：检查 `backend/.env` 填对没、网络能不能连到服务器、`/api/health` 是否返回 `ok: true`。
-- **端口 5000 被占用**：改 `backend/app.py` 最后一行的 `port=5000` 成别的（如 5001），再用 `http://127.0.0.1:5001/` 打开。
+# 2. 进入后端目录
+cd ~/SRT/backend
+
+# 3. 后台启动，对外开放
+HOST=0.0.0.0 nohup python3.11 app.py > server.log 2>&1 &
+不报错就是在跑了 可以打开网站 http://8.130.188.157:5000/ 查看
