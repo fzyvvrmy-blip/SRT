@@ -627,4 +627,5 @@ def frontend(path='index.html'):
 
 
 if __name__ == '__main__':
-    app.run(host='127.0.0.1', port=5000, debug=True)
+    host = os.environ.get('HOST', '127.0.0.1')  # 本地默认 127.0.0.1；服务器设 HOST=0.0.0.0 对外开放
+    app.run(host=host, port=5000, debug=(host == '127.0.0.1'))
