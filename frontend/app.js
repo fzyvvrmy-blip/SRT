@@ -1272,8 +1272,8 @@ function reader(){
       const spans=para.map(({s,origIdx},sIdx)=>{
         const isActive=(origIdx===S.rActiveSentence);
         const raw=s.text.replace(/^　/,'');
-        const displayText=(sIdx===0?'　':'')+raw;
-        return `<span class="rd-sentence${isActive?' rd-active':''}" data-idx="${origIdx}" onclick="rdPlaySentence(${origIdx})" onmouseenter="rdHover(${origIdx},true)" onmouseleave="rdHover(${origIdx},false)" title="点击播放">${displayText}</span>`;
+        const indent=(sIdx===0?'　':'');
+        return `${indent}<span class="rd-sentence${isActive?' rd-active':''}" data-idx="${origIdx}" onclick="rdPlaySentence(${origIdx})" onmouseenter="rdHover(${origIdx},true)" onmouseleave="rdHover(${origIdx},false)" title="点击播放">${raw}</span>`;
       }).join('');
       return `<p class="rd-body" data-para="${pIdx}">${spans}</p>`;
     }).join('');
