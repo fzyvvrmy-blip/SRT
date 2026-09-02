@@ -1611,19 +1611,78 @@ mark.tag-wrong {
   min-height: 0;
 }
 .rd-article {
-  flex: 1;
+  flex: 3;
   padding: 24px 28px 32px;
   line-height: 2;
   font-size: 17px;
   overflow-y: auto;
+  /* 精读课文：日文原文，用无限制别名让汉字也走圆体 */
+  font-family: "ZMG-Full", "Zen Maru Gothic", serif;
 }
 .rd-trans {
-  width: 300px;
-  padding: 24px 20px 32px;
-  border-left: 1px solid #ede8f7;
+  flex: 2;
+  min-width: 0;
+  padding: 24px 18px 32px;
+  border-left: 2px solid #ede8f7;
   font-size: 14px;
-  color: #666;
+  color: #555;
   overflow-y: auto;
+  background: #faf8ff;
+}
+
+/* 译文面板内部 */
+.rd-trans-label {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: .08em;
+  color: #a78bfa;
+  text-transform: uppercase;
+  margin: 0 0 14px;
+}
+.rd-trans-title {
+  font-weight: 700;
+  color: #3b0764;
+  font-size: 15px;
+  margin: 0 0 14px;
+}
+.rd-trans-para {
+  margin: 0 0 1em;
+  line-height: 2;
+}
+/* 译文中每句单独占一行 */
+.rd-trans-sentence {
+  display: inline;
+  padding: 1px 3px;
+  border-radius: 3px;
+  transition: background .12s, color .12s;
+}
+.rd-trans-sentence.rd-hover {
+  background: #ede8f7;
+  color: #5b21b6;
+}
+.rd-trans-sentence.rd-active {
+  background: #7c3aed;
+  color: #fff;
+  border-radius: 4px;
+}
+
+/* 「译文」切换按钮 */
+.rd-trans-btn {
+  padding: 5px 14px;
+  border-radius: 20px;
+  border: 1.5px solid #c4b5fd;
+  background: #fff;
+  color: #7c3aed;
+  font-size: 13px;
+  cursor: pointer;
+  transition: background .15s, color .15s;
+  margin-left: 8px;
+  white-space: nowrap;
+}
+.rd-trans-btn.on {
+  background: #7c3aed;
+  color: #fff;
+  border-color: #7c3aed;
 }
 
 /* 文章标题 */
@@ -1635,9 +1694,9 @@ mark.tag-wrong {
   letter-spacing: .04em;
 }
 
-/* 正文段落（所有句子连续排在一起） */
+/* 正文段落（段首缩进已在 JS 去除，段间用 margin-bottom 分隔） */
 .rd-body {
-  margin: 0;
+  margin: 0 0 0.6em;
   line-height: 2.2;
 }
 

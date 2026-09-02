@@ -1101,12 +1101,19 @@ function rdOnTimeUpdate(){
   }
   if(idx!==S.rActiveSentence){
     S.rActiveSentence=idx;
+    // 同步高亮正文句子 + 译文句子
     document.querySelectorAll('.rd-sentence').forEach(el=>{
+      el.classList.toggle('rd-active',+el.dataset.idx===idx);
+    });
+    document.querySelectorAll('.rd-trans-sentence').forEach(el=>{
       el.classList.toggle('rd-active',+el.dataset.idx===idx);
     });
     if(idx>=0){
       const el=document.querySelector(`.rd-sentence[data-idx="${idx}"]`);
       if(el)el.scrollIntoView({behavior:'smooth',block:'nearest'});
+      // 译文面板也跟随滚动
+      const tel=document.querySelector(`.rd-trans-sentence[data-idx="${idx}"]`);
+      if(tel)tel.scrollIntoView({behavior:'smooth',block:'nearest'});
     }
   }
   // 点读模式：播到目标句的 end 就停，不自动连播下一句
@@ -1117,6 +1124,9 @@ function rdOnTimeUpdate(){
     // 停止后把高亮恢复到点读的那句（此刻 t 已越过 end，高亮逻辑已把它清成 -1）
     S.rActiveSentence=S.rPlayIdx;
     document.querySelectorAll('.rd-sentence').forEach(el=>{
+      el.classList.toggle('rd-active',+el.dataset.idx===S.rPlayIdx);
+    });
+    document.querySelectorAll('.rd-trans-sentence').forEach(el=>{
       el.classList.toggle('rd-active',+el.dataset.idx===S.rPlayIdx);
     });
   }
@@ -1162,7 +1172,47 @@ function rdPlaySentence(idx){
   S.rPlayIdx=idx;
   document.querySelectorAll('.rd-sentence').forEach(el=>
     el.classList.toggle('rd-active',+el.dataset.idx===idx));
+  document.querySelectorAll('.rd-trans-sentence').forEach(el=>
+    el.classList.toggle('rd-active',+el.dataset.idx===idx));
   rdDrawControls();
+}
+
+/* hover 联动：鼠标悬停日语句子时，译文侧对应句子同步高亮 */
+function rdHover(idx, on){
+  document.querySelectorAll(`.rd-trans-sentence[data-idx="${idx}"]`)
+    .forEach(el=>el.classList.toggle('rd-hover', on));
+}
+
+/* 段落高度对齐：让译文每段的顶部与对应日语段落对齐。
+   日语段落通常比中文高（字号大+行高大），中文段落用 padding-top 补差。
+   如果中文段落反而更高则不加（不压缩日语）。 */
+function rdAlignParas(){
+  const artParas=document.querySelectorAll('.rd-article .rd-body[data-para]');
+  const transParas=document.querySelectorAll('.rd-trans-panel .rd-trans-para[data-para], #rd-trans-panel .rd-trans-para[data-para]');
+  if(!artParas.length||!transParas.length)return;
+
+  // 先清掉上次对齐的 padding，重新量
+  transParas.forEach(el=>{ el.style.paddingTop=''; });
+
+  // 量每个原文段落相对 rd-article 顶部的 offsetTop（用 getBoundingClientRect 更准）
+  const artWrap=document.querySelector('.rd-article');
+  const transWrap=document.querySelector('.rd-trans');
+  if(!artWrap||!transWrap)return;
+  const artTop=artWrap.getBoundingClientRect().top;
+  const transTop=transWrap.getBoundingClientRect().top;
+
+  artParas.forEach(artP=>{
+    const pIdx=artP.dataset.para;
+    const transP=transWrap.querySelector(`.rd-trans-para[data-para="${pIdx}"]`);
+    if(!transP)return;
+
+    const artPTop=artP.getBoundingClientRect().top - artTop;
+    const transPTop=transP.getBoundingClientRect().top - transTop;
+    const diff=artPTop - transPTop;   // 正值 = 日语段落比中文段落更靠下
+    if(diff>2){
+      transP.style.paddingTop=diff+'px';
+    }
+  });
 }
 
 /* 换册：清空所有缓存，重新拉课号列表 */
@@ -1199,19 +1249,55 @@ function reader(){
   const titleSentence=RD_SENTENCES?RD_SENTENCES.find(s=>s.seq===1):null;
 
   let articleHtml='';
+  let transHtml='';
   if(RD_LOADING){
     articleHtml='<p class="rd-loading">加载中…</p>';
   } else if(!RD_SENTENCES){
     articleHtml='<p class="rd-hint">请选择课程</p>';
   } else {
-    // 所有正文句子连续写进同一个 <p>，每句是可点击的 <span>
-    const spans=RD_SENTENCES.map((s,i)=>{
-      if(s.seq===1) return '';   // 标题句不作为正文句子渲染
-      const isActive=(i===S.rActiveSentence);
-      return `<span class="rd-sentence${isActive?' rd-active':''}" data-idx="${i}" onclick="rdPlaySentence(${i})" title="点击播放">${s.text}</span>`;
+    // ── 正文分段渲染 ──────────────────────────────────────────
+    // text 以全角空格「　」开头 → 新自然段开始；否则接着当前段。
+    // 每段渲染成一个 <p class="rd-body">，段内每句是可点击 <span>。
+    const bodySentences=RD_SENTENCES.filter(s=>s.seq!==1);
+    const paragraphs=[];   // paragraphs[i] = [{sentence, originalIdx}, ...]
+    bodySentences.forEach((s,relIdx)=>{
+      const origIdx=RD_SENTENCES.indexOf(s);
+      if(s.text.startsWith('　')||paragraphs.length===0){
+        paragraphs.push([]);  // 开新段
+      }
+      paragraphs[paragraphs.length-1].push({s, origIdx});
+    });
+
+    const paraHtmls=paragraphs.map((para,pIdx)=>{
+      const spans=para.map(({s,origIdx},sIdx)=>{
+        const isActive=(origIdx===S.rActiveSentence);
+        const raw=s.text.replace(/^　/,'');
+        const displayText=(sIdx===0?'　':'')+raw;
+        return `<span class="rd-sentence${isActive?' rd-active':''}" data-idx="${origIdx}" onclick="rdPlaySentence(${origIdx})" onmouseenter="rdHover(${origIdx},true)" onmouseleave="rdHover(${origIdx},false)" title="点击播放">${displayText}</span>`;
+      }).join('');
+      return `<p class="rd-body" data-para="${pIdx}">${spans}</p>`;
     }).join('');
-    articleHtml=`${titleSentence?`<h3 class="rd-title">${titleSentence.text}</h3>`:''}
-      <p class="rd-body">${spans}</p>`;
+
+    articleHtml=`${titleSentence?`<h3 class="rd-title">${titleSentence.text.replace(/^　/,'')}</h3>`:''}${paraHtmls}`;
+
+    // ── 译文面板 ─────────────────────────────────────────────
+    if(S.rShowTrans){
+      const titleTrans=titleSentence&&titleSentence.translation
+        ?`<p class="rd-trans-title">${titleSentence.translation}</p>`:'';
+      const transParas=paragraphs.map((para,pIdx)=>{
+        // 段内所有句子的译文拼成一整段，用空格分隔句子
+        // 每句仍用 span 包裹以支持 hover/active 高亮，但 display:inline 连成一段
+        const spans=para.map(({s,origIdx})=>{
+          const isActive=(origIdx===S.rActiveSentence);
+          return `<span class="rd-trans-sentence${isActive?' rd-active':''}" data-idx="${origIdx}">${s.translation||''}</span>`;
+        }).join('');
+        return `<p class="rd-trans-para" data-para="${pIdx}">${spans}</p>`;
+      }).join('');
+      transHtml=`<div class="rd-trans" id="rd-trans-panel">
+        <p class="rd-trans-label">中文译文</p>
+        ${titleTrans}${transParas}
+      </div>`;
+    }
   }
 
   box(title('精读','Close Reading','home')+`
@@ -1219,7 +1305,7 @@ function reader(){
       <div class="selects">
         <select onchange="rdChangeBook(this.value)">${bookOpts}</select>
         <select onchange="rdChangeLesson(this.value)">${lessonOpts||'<option>加载中…</option>'}</select>
-        <button class="${S.rShowTrans?'on':''}" onclick="S.rShowTrans=!S.rShowTrans;draw()" style="margin-left:8px">展示译文</button>
+        <button class="rd-trans-btn${S.rShowTrans?' on':''}" onclick="S.rShowTrans=!S.rShowTrans;draw()">译文</button>
       </div>
 
       <div class="rd-ctrl-bar" id="rd-ctrl">
@@ -1235,13 +1321,12 @@ function reader(){
         <div class="rd-article">
           ${articleHtml}
         </div>
-        ${S.rShowTrans?`<div class="rd-trans">
-          <small>中文译文</small>
-          <p class="rd-hint" style="padding-top:8px">（翻译内容即将上线）</p>
-        </div>`:''}
+        ${transHtml}
       </div>
     </div>
   </section>`);
+  // 译文开启时，等 DOM 稳定后对齐各段高度
+  if(S.rShowTrans) requestAnimationFrame(rdAlignParas);
 }
 
 /* 进度条点击跳转：算点击位置占总宽度的比例，换算成时间 */
