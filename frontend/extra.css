@@ -1728,3 +1728,166 @@ mark.tag-wrong {
 }
 
 
+/* ============================================================
+   资源页 — 教材书架
+   ============================================================ */
+
+/* 教材区整体容器 */
+.tb-section {
+  margin-bottom: 28px;
+}
+.tb-section-label {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: .1em;
+  color: var(--muted);
+  text-transform: uppercase;
+  margin-bottom: 14px;
+}
+
+/* 横向滚动书架 */
+.tb-shelf {
+  display: flex;
+  gap: 16px;
+  overflow-x: auto;
+  padding-bottom: 10px;
+  scrollbar-width: thin;
+  scrollbar-color: #d8d0f0 transparent;
+}
+.tb-shelf::-webkit-scrollbar { height: 5px; }
+.tb-shelf::-webkit-scrollbar-thumb { background: #d8d0f0; border-radius: 3px; }
+
+/* 单本书卡片 */
+.tb-card {
+  flex-shrink: 0;
+  width: 120px;
+  cursor: pointer;
+  border-radius: 12px;
+  transition: transform .15s, box-shadow .15s;
+}
+.tb-card:hover {
+  transform: translateY(-4px);
+  box-shadow: 0 10px 24px #43306118;
+}
+
+/* 封面图区域 */
+.tb-cover {
+  width: 120px;
+  height: 160px;
+  border-radius: 8px;
+  overflow: hidden;
+  background: linear-gradient(135deg, #8964d8, #54359c);
+  position: relative;
+  box-shadow: 3px 3px 10px #3730a330;
+}
+.tb-cover img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+/* 封面加载失败时的纯色兜底 */
+.tb-cover-fallback {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #fff;
+  font-size: 13px;
+  font-weight: 600;
+  text-align: center;
+  padding: 12px;
+  line-height: 1.5;
+}
+
+/* 书名 + 下载按钮行 */
+.tb-info {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 4px;
+  margin-top: 8px;
+  padding: 0 2px;
+}
+.tb-name {
+  font-size: 12px;
+  line-height: 1.4;
+  color: var(--ink);
+  flex: 1;
+  /* 最多显示 2 行，超出省略 */
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+.tb-dl {
+  flex-shrink: 0;
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  background: var(--l);
+  color: var(--v);
+  font-size: 14px;
+  display: grid;
+  place-items: center;
+  text-decoration: none;
+  transition: background .15s;
+  margin-top: 1px;
+}
+.tb-dl:hover {
+  background: var(--v);
+  color: #fff;
+}
+
+/* ── PDF 预览弹窗 ───────────────────────────────────────────── */
+.tb-preview-shade {
+  position: fixed;
+  inset: 0;
+  z-index: 99;
+  background: #2c204580;
+  display: grid;
+  place-items: center;
+  padding: 20px;
+}
+.tb-preview-modal {
+  width: min(860px, 96vw);
+  height: min(90vh, 1000px);
+  background: white;
+  border-radius: 18px;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  box-shadow: 0 24px 60px #1e093660;
+}
+.tb-preview-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 14px 20px;
+  border-bottom: 1px solid var(--line);
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--ink);
+  flex-shrink: 0;
+}
+.tb-preview-btn {
+  padding: 6px 14px;
+  border-radius: 8px;
+  background: var(--l);
+  color: var(--v);
+  font-size: 13px;
+  border: none;
+  cursor: pointer;
+  text-decoration: none;
+  transition: background .12s;
+}
+.tb-preview-btn:hover {
+  background: var(--v);
+  color: #fff;
+}
+.tb-preview-frame {
+  flex: 1;
+  width: 100%;
+  border: none;
+}

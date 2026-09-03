@@ -618,7 +618,119 @@ def audio_proxy(filepath):
         return jsonify({'error': str(e)}), 500
 
 
-# ── 静态文件 ──────────────────────────────────────────────────────────────────
+# ── 教材资源 ──────────────────────────────────────────────────────────────────
+
+TEXTBOOK_ROOT = os.environ.get('TEXTBOOK_ROOT', '/home/Source/Download/Textbook').rstrip('/')
+COVER_CACHE   = os.path.join(BASE_DIR, 'cover_cache')   # 封面缓存目录（相对后端）
+
+
+def _cover_cache_path(rel_path: str) -> str:
+    """把相对路径转成缓存文件名，存在 cover_cache/ 下。"""
+    safe = rel_path.replace('/', '_').replace(' ', '_')
+    return os.path.join(COVER_CACHE, safe + '.jpg')
+
+
+@app.route('/api/textbooks')
+def textbooks():
+    """
+    扫描 TEXTBOOK_ROOT，返回所有 PDF 文件列表。
+    返回: {books: [{name, path}]}  path 是相对于 TEXTBOOK_ROOT 的路径
+    """
+    books = []
+    try:
+        for fname in sorted(os.listdir(TEXTBOOK_ROOT)):
+            if fname.lower().endswith('.pdf'):
+                books.append({
+                    'name': os.path.splitext(fname)[0],
+                    'path': fname,
+                })
+    except FileNotFoundError:
+        pass
+    return jsonify({'books': books})
+
+
+@app.route('/api/textbook/cover/<path:filepath>')
+def textbook_cover(filepath):
+    """
+    返回 PDF 第一页的 JPG 封面图。
+    首次调用用 PyMuPDF 渲染并缓存到磁盘，后续直接返回缓存。
+    """
+    full_pdf = f'{TEXTBOOK_ROOT}/{filepath}'
+    cache_path = _cover_cache_path(filepath)
+
+    # 如果缓存存在直接返回
+    if os.path.exists(cache_path):
+        return send_from_directory(os.path.dirname(cache_path),
+                                   os.path.basename(cache_path),
+                                   mimetype='image/jpeg')
+    # 生成封面
+    try:
+        import fitz  # PyMuPDF
+        os.makedirs(COVER_CACHE, exist_ok=True)
+        doc = fitz.open(full_pdf)
+        page = doc[0]
+        # 渲染为 150dpi 的 RGB 图（够用，文件小）
+        mat = fitz.Matrix(150 / 72, 150 / 72)
+        pix = page.get_pixmap(matrix=mat, colorspace=fitz.csRGB)
+        pix.save(cache_path)
+        doc.close()
+        return send_from_directory(os.path.dirname(cache_path),
+                                   os.path.basename(cache_path),
+                                   mimetype='image/jpeg')
+    except FileNotFoundError:
+        return jsonify({'error': f'pdf not found: {full_pdf}'}), 404
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/textbook/file/<path:filepath>')
+def textbook_file(filepath):
+    """
+    代理服务器上的 PDF 文件给前端下载/预览。
+    支持 Range 请求，让浏览器 <iframe> 能流式加载。
+    """
+    full_path = f'{TEXTBOOK_ROOT}/{filepath}'
+    range_header = request.headers.get('Range')
+
+    try:
+        file_size = os.path.getsize(full_path)
+
+        if range_header:
+            byte_range = range_header.replace('bytes=', '').split('-')
+            start = int(byte_range[0]) if byte_range[0] else 0
+            end   = int(byte_range[1]) if byte_range[1] else file_size - 1
+            end   = min(end, file_size - 1)
+            length = end - start + 1
+            with open(full_path, 'rb') as f:
+                f.seek(start)
+                data = f.read(length)
+            resp = Response(data, 206, mimetype='application/pdf')
+            resp.headers['Content-Range']  = f'bytes {start}-{end}/{file_size}'
+            resp.headers['Accept-Ranges']  = 'bytes'
+            resp.headers['Content-Length'] = str(length)
+        else:
+            with open(full_path, 'rb') as f:
+                data = f.read()
+            resp = Response(data, 200, mimetype='application/pdf')
+            resp.headers['Accept-Ranges']  = 'bytes'
+            resp.headers['Content-Length'] = str(file_size)
+
+        # 触发下载时用文件名；inline 预览时浏览器自己决定
+        fname = os.path.basename(full_path)
+        disposition = request.args.get('dl')
+        if disposition:
+            resp.headers['Content-Disposition'] = f'attachment; filename="{fname}"'
+        else:
+            resp.headers['Content-Disposition'] = f'inline; filename="{fname}"'
+        resp.headers['Cache-Control'] = 'public, max-age=3600'
+        return resp
+
+    except FileNotFoundError:
+        return jsonify({'error': f'file not found: {full_path}'}), 404
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
 
 @app.route('/')
 @app.route('/<path:path>')

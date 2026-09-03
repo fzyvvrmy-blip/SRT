@@ -3,6 +3,7 @@
 audio_alignment(mfa)/
 .claude/
 .vscode/
+backend/cover_cache/
 
 # Byte-compiled / optimized / DLL files
 __pycache__/

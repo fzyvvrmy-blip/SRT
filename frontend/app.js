@@ -1342,29 +1342,101 @@ function rdSeekClick(e,bar){
 
 
 /* ============================================================
-   资源页（静态占位）
+/* ============================================================
+   资源页
+   ============================================================
+   布局：教材行 = 横向可滚动书架（书封面 + 书名 + 下载按钮）
+         其余分类暂为静态占位
+   数据：/api/textbooks 返回 [{name, path}] 列表
+   交互：点击封面/书名 → 打开 PDF 预览弹窗
+         点击下载按钮   → 触发 /api/textbook/file/<path>?dl=1
    ============================================================ */
+
+let TB_BOOKS = null;   // 教材列表缓存，null=未加载
+
+async function loadTextbooks(){
+  if(TB_BOOKS !== null) return;
+  try {
+    const d = await (await fetch('/api/textbooks')).json();
+    TB_BOOKS = d.books || [];
+  } catch(e){ TB_BOOKS = []; }
+  draw();
+}
+
 function resources(){
-  const x=[
-    ['教材',['综合日语 第一册','综合日语 第二册','综合日语 第三册','综合日语 第四册','口译教程','新经典听力教室','塞罕坝']],
-    ['课内补充材料',['ゆでたまご','字のないはがき','夏目漱石']],
-    ['JLPT',['（敬请期待）']]
-  ];
+  if(TB_BOOKS === null) loadTextbooks();
+
+  // ── 教材书架 HTML ──────────────────────────────────────────
+  let shelfHtml;
+  if(!TB_BOOKS){
+    shelfHtml = '<p class="rd-hint">加载中…</p>';
+  } else if(TB_BOOKS.length === 0){
+    shelfHtml = '<p class="rd-hint">暂无教材文件</p>';
+  } else {
+    const cards = TB_BOOKS.map((b,i) => `
+      <div class="tb-card" onclick="openPdf('${encodeURIComponent(b.path)}','${b.name.replace(/'/g,'&#39;')}')">
+        <div class="tb-cover">
+          <img src="/api/textbook/cover/${encodeURIComponent(b.path)}"
+               alt="${b.name}"
+               onerror="this.style.display='none';this.nextElementSibling.style.display='flex'">
+          <div class="tb-cover-fallback" style="display:none">${b.name.slice(0,4)}</div>
+        </div>
+        <div class="tb-info">
+          <span class="tb-name">${b.name}</span>
+          <a class="tb-dl" href="/api/textbook/file/${encodeURIComponent(b.path)}?dl=1"
+             download="${b.name}.pdf"
+             onclick="event.stopPropagation()" title="下载">↓</a>
+        </div>
+      </div>`).join('');
+    shelfHtml = `<div class="tb-shelf">${cards}</div>`;
+  }
+
+  // ── 其他分类占位 ──────────────────────────────────────────
+  const otherShelves = [
+    ['课内补充材料', ['ゆでたまご', '字のないはがき', '夏目漱石']],
+    ['JLPT',        ['（敬请期待）']],
+  ].map(([label, items]) => `
+    <div class="shelf">
+      <small>${label}</small>
+      <div>${items.map(y=>`
+        <section>
+          <b>${y}</b>
+          <button onclick="alert('即将上线')">↓ 下载</button>
+        </section>`).join('')}
+      </div>
+    </div>`).join('');
+
   box(title('资源','Library','home')+`
     <div class="card">
-      ${x.map(z=>`
-        <div class="shelf">
-          <small>${z[0]}</small>
-          <div>${z[1].map(y=>`
-            <section>
-              <b>${y}</b>
-              <button onclick="alert('资源文件导入后可下载')">↓ 下载</button>
-            </section>`).join('')}
-          </div>
-        </div>`).join('')}
+      <div class="tb-section">
+        <div class="tb-section-label">教材</div>
+        ${shelfHtml}
+      </div>
+      ${otherShelves}
     </div>
   </section>`);
 }
+
+/* PDF 预览弹窗 */
+function openPdf(encodedPath, name){
+  const url = `/api/textbook/file/${encodedPath}`;
+  const shade = document.createElement('div');
+  shade.className = 'shade tb-preview-shade';
+  shade.innerHTML = `
+    <div class="tb-preview-modal" onclick="event.stopPropagation()">
+      <div class="tb-preview-header">
+        <span>${name}</span>
+        <div style="display:flex;gap:8px">
+          <a href="${url}?dl=1" download="${name}.pdf" class="tb-preview-btn">↓ 下载</a>
+          <button class="tb-preview-btn" onclick="this.closest('.tb-preview-shade').remove()">✕ 关闭</button>
+        </div>
+      </div>
+      <iframe src="${url}" class="tb-preview-frame" type="application/pdf"></iframe>
+    </div>`;
+  shade.addEventListener('click', () => shade.remove());
+  document.body.appendChild(shade);
+}
+
 
 
 /* ============================================================
