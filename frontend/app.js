@@ -1426,10 +1426,7 @@ function openPdf(encodedPath, name){
     <div class="tb-preview-modal" onclick="event.stopPropagation()">
       <div class="tb-preview-header">
         <span>${name}</span>
-        <div style="display:flex;gap:8px">
-          <a href="${url}?dl=1" download="${name}.pdf" class="tb-preview-btn">↓ 下载</a>
-          <button class="tb-preview-btn" onclick="this.closest('.tb-preview-shade').remove()">✕ 关闭</button>
-        </div>
+        <button class="tb-preview-btn" onclick="this.closest('.tb-preview-shade').remove()">✕ 关闭</button>
       </div>
       <iframe src="${url}" class="tb-preview-frame" type="application/pdf"></iframe>
     </div>`;
