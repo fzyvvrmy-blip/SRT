@@ -1844,15 +1844,16 @@ mark.tag-wrong {
 .tb-preview-shade {
   position: fixed;
   inset: 0;
-  z-index: 99;
+  z-index: 9999;
   background: #2c204580;
-  display: grid;
-  place-items: center;
-  padding: 20px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: clamp(14px, 3vh, 28px);
 }
 .tb-preview-modal {
-  width: min(860px, 96vw);
-  height: min(90vh, 1000px);
+  width: min(900px, 100%);
+  height: 100%;
   background: white;
   border-radius: 18px;
   overflow: hidden;
@@ -1864,12 +1865,20 @@ mark.tag-wrong {
   display: flex;
   align-items: center;
   justify-content: space-between;
+  gap: 12px;
   padding: 14px 20px;
   border-bottom: 1px solid var(--line);
   font-size: 14px;
   font-weight: 600;
   color: var(--ink);
   flex-shrink: 0;
+}
+.tb-preview-header > span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  flex: 1;
+  min-width: 0;
 }
 .tb-preview-btn {
   padding: 6px 14px;
@@ -1881,6 +1890,8 @@ mark.tag-wrong {
   cursor: pointer;
   text-decoration: none;
   transition: background .12s;
+  white-space: nowrap;
+  flex-shrink: 0;
 }
 .tb-preview-btn:hover {
   background: var(--v);
@@ -1890,4 +1901,5 @@ mark.tag-wrong {
   flex: 1;
   width: 100%;
   border: none;
+  min-height: 0;
 }
