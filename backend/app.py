@@ -5,6 +5,7 @@
 前端：http://127.0.0.1:5000/      API 健康检查：/api/health
 """
 import os
+from urllib.parse import quote
 from flask import Flask, jsonify, send_from_directory, request, Response
 
 import config
@@ -716,12 +717,14 @@ def textbook_file(filepath):
             resp.headers['Content-Length'] = str(file_size)
 
         # 触发下载时用文件名；inline 预览时浏览器自己决定
+        # 用 RFC 5987 编码文件名，避免中文在 latin-1 响应头里崩溃
         fname = os.path.basename(full_path)
+        quoted = quote(fname, safe='')
         disposition = request.args.get('dl')
         if disposition:
-            resp.headers['Content-Disposition'] = f'attachment; filename="{fname}"'
+            resp.headers['Content-Disposition'] = f"attachment; filename*=UTF-8''{quoted}"
         else:
-            resp.headers['Content-Disposition'] = f'inline; filename="{fname}"'
+            resp.headers['Content-Disposition'] = f"inline; filename*=UTF-8''{quoted}"
         resp.headers['Cache-Control'] = 'public, max-age=3600'
         return resp
 
