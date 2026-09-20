@@ -40,11 +40,11 @@ CREATE INDEX IF NOT EXISTS idx_words_locate
 --     role: 'admin' | 'teacher' | 'student'
 CREATE TABLE IF NOT EXISTS koniponi.users (
     id           TEXT PRIMARY KEY,               -- '001', '002', ...
-    student_id   TEXT UNIQUE NOT NULL,           -- 登录账号，如 'admin'
+    student_id   TEXT UNIQUE NOT NULL,           -- 登录账号：admin='001'，学生=学号
+    name         TEXT NOT NULL,
     password     TEXT NOT NULL,                  -- 目前明文
     role         TEXT NOT NULL DEFAULT 'student',
-    name         TEXT NOT NULL,
-    grade        TEXT,                           -- 大一/大二/大三/大四，teacher/admin 可空
+    enroll_year  SMALLINT,                       -- 入学年份（学号前4位），admin 可空
     created_at   TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 

@@ -49,8 +49,12 @@ const MODES={
   gairaigo_cn2jp:'外来语（中译日）',
 };
 
-/* 当前用户 id（硬编码，未来登录后替换） */
-const UID = '001';
+/* 当前登录用户（localStorage 持久化；null = 未登录） */
+let UID = null, UNAME = null, UROLE = null;
+try {
+  const _u = JSON.parse(localStorage.getItem('koniponi_user') || 'null');
+  if (_u) { UID = _u.id; UNAME = _u.name; UROLE = _u.role; }
+} catch (e) {}
 
 /* 抽查会话状态（null=没有进行中的测试） */
 let QZ = null;   // {sessionId, questions, mode, modeLabel, qIdx, answers, submitted, result, startTime, elapsed}
@@ -168,12 +172,12 @@ function nav(){
     <div class="user-wrap">
       <button class="user user-card" onclick="S.usermenu=!S.usermenu;draw()">
         <i><img src="assets/avatar-pony.png" alt="用户头像"></i>
-        <span class="uname">王宇翔 <em>▾</em></span>
+        <span class="uname">${UNAME||'未登录'} <em>▾</em></span>
       </button>
       ${S.usermenu?`<div class="user-dropdown" id="udrop">
         <button onclick="S.usermenu=false;go('profile')">👤　个人中心</button>
         <hr>
-        <button onclick="S.usermenu=false;go('login')">退出登录</button>
+        <button onclick="logout()">退出登录</button>
       </div>`:''}
     </div>
     <div id="grades">${['大一','大二','大三','大四'].map(x=>`<button onclick="S.g='${x}';document.querySelector('#grades').classList.remove('open');draw()">${x}</button>`).join('')}</div>
@@ -1505,8 +1509,8 @@ function profile(){
   box(title('个人中心','My Space','home')+`
     <div class="profile">
       <aside>
-        <i>♞</i>
-        <b>林同学</b>
+        <i>${(UNAME||'?').charAt(0)}</i>
+        <b>${UNAME||''}</b>
         <small>清华大学 · ${S.g}</small>
         <button onclick="S.pro='words';if(MY_WORDS===null)loadMyWords();draw()">📖　我的单词本</button>
         <button onclick="S.pro='mistakes';draw()">✏️　作业错题</button>
@@ -1596,25 +1600,70 @@ function result(){
    ============================================================ */
 function login(){
   A.innerHTML=`<main class="login">
-    <section>
-      <div>
-        <div class="logo">KONIPONI</div>
-        <p style="color:#9b8fc0;font-size:13px;letter-spacing:1px">鴨川の飛び石を跳ねるように</p>
-        <i style="font-style:normal;font-size:64px;display:block;margin-top:8px">♞</i>
-      </div>
-    </section>
-    <section>
-      <div>
-        <small style="font-size:11px;color:#9b8fc0;letter-spacing:1.5px;text-transform:uppercase">Student Portal</small>
-        <h1>おかえり。</h1>
-        <p>请使用学生账号登录，继续你的学习旅程。</p>
-        <input placeholder="学号 / Student ID">
-        <input type="password" placeholder="密码 / Password">
-        <select id="lg"><option>大一</option><option>大二</option><option>大三</option><option>大四</option></select>
-        <button class="primary" onclick="S.g=document.querySelector('#lg').value;go('home')">登录</button>
-      </div>
-    </section>
+    <svg class="login-bg" viewBox="0 0 1440 900" preserveAspectRatio="xMidYMid slice" aria-hidden="true">
+      <defs>
+        <pattern id="riverP" width="240" height="240" patternUnits="userSpaceOnUse">
+          <g fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
+            <path d="M0 60 C40 40 80 80 120 60 S200 40 240 60"/>
+            <path d="M0 120 C40 100 80 140 120 120 S200 100 240 120"/>
+            <path d="M0 180 C40 160 80 200 120 180 S200 160 240 180"/>
+          </g>
+          <g fill="currentColor">
+            <ellipse cx="40" cy="60" rx="20" ry="9"/>
+            <ellipse cx="110" cy="120" rx="25" ry="11"/>
+            <ellipse cx="180" cy="180" rx="20" ry="9"/>
+            <ellipse cx="200" cy="60" rx="14" ry="6"/>
+            <ellipse cx="70" cy="180" rx="16" ry="7"/>
+          </g>
+        </pattern>
+      </defs>
+      <rect width="1440" height="900" fill="url(#riverP)"/>
+    </svg>
+    <div class="login-wrap">
+      <div class="logo">KONIPONI</div>
+      <p class="tagline">鴨川の飛び石を跳ねるように</p>
+      <input id="lg-id" placeholder="学号 / Student ID" autocomplete="username">
+      <input id="lg-pw" type="password" placeholder="密码 / Password" autocomplete="current-password">
+      <p id="lg-err"></p>
+      <button class="primary" onclick="doLogin()">登录</button>
+    </div>
   </main>`;
+}
+
+/* 提交登录：student_id + password → /api/login */
+async function doLogin(){
+  const sid = document.querySelector('#lg-id').value.trim();
+  const pw  = document.querySelector('#lg-pw').value;
+  const err = document.querySelector('#lg-err');
+  if(!sid || !pw){ err.textContent = '请输入学号和密码'; return; }
+  err.textContent = '';
+  try{
+    const res = await fetch('/api/login', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({student_id: sid, password: pw}),
+    });
+    const data = await res.json();
+    if(res.ok && data.ok){
+      UID = data.user.id;
+      UNAME = data.user.name;
+      UROLE = data.user.role;
+      localStorage.setItem('koniponi_user', JSON.stringify(data.user));
+      go('home');
+    } else {
+      err.textContent = data.error || '账号或密码错误';
+    }
+  } catch(e){
+    err.textContent = '网络错误，请稍后重试';
+  }
+}
+
+/* 退出登录：清空本地用户状态 */
+function logout(){
+  UID = null; UNAME = null; UROLE = null;
+  localStorage.removeItem('koniponi_user');
+  S.usermenu = false;
+  go('login');
 }
 
 
@@ -1633,7 +1682,10 @@ function go(x){
 }
 
 /* 核心渲染分发：根据 S.p 调对应渲染函数，写入 #app */
-function draw(){ ({home,words,reader,resources,profile,homework,question,result,login}[S.p]||home)(); }
+function draw(){
+  if(!UID && S.p!=='login') S.p='login';   // 未登录统一回登录页
+  ({home,words,reader,resources,profile,homework,question,result,login}[S.p]||home)();
+}
 
 /* 首页彩纸动画 */
 function party(){

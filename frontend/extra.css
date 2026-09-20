@@ -1390,39 +1390,60 @@ mark.tag-wrong {
    登录页
    ============================================================ */
 .login {
+  position: relative;
   min-height: 100vh;
   display: grid;
-  grid-template-columns: 1fr 1fr;
-}
-.login > section:first-child {
-  background: linear-gradient(145deg, #f0e8ff, #e0f4ef);
-  display: grid;
+  grid-template-columns: 1fr;
   place-items: center;
+  padding: 48px 24px;
+  overflow: hidden;
+  background: linear-gradient(160deg, #f6effd 0%, #eee2fb 48%, #e6d7f7 100%);
+}
+/* 深紫压纹背景：river with stone（飛び石 + 河流水纹） */
+.login-bg {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  color: #57378f;
+  opacity: .14;
+  pointer-events: none;
+}
+.login-wrap {
+  position: relative;
+  z-index: 1;
+  width: 320px;
+  max-width: 100%;
   text-align: center;
 }
-.login > section:first-child .logo {
-  font: italic 800 64px "Playfair Display", serif;
-  color: #6c08a0;
-  letter-spacing: -3px;
+.login .logo {
+  font: italic 800 42px "Playfair Display", serif;
+  color: #5b2f9b;
+  letter-spacing: -2px;
   animation: float 4s infinite;
 }
-.login > section:first-child i { font-size: 64px; display: block; margin-top: 12px; }
-.login > section:last-child { display: grid; place-items: center; background: white; }
-.login > section:last-child > div { width: 340px; max-width: 88%; }
-.login h1 { font: 700 32px "Playfair Display"; margin: 0 0 8px; color: #1a1230; }
-.login p { color: #9b8fc0; font-size: 13px; margin: 0 0 24px; }
-.login input, .login select {
+.login .tagline {
+  color: #9b8fc0;
+  font-size: 12px;
+  letter-spacing: 2px;
+  margin: 12px 0 44px;
+}
+.login input {
   display: block;
   width: 100%;
-  margin: 8px 0;
-  padding: 12px 14px;
-  border: 1.5px solid #ddd7f0;
+  margin: 12px 0;
+  padding: 13px 15px;
+  border: 1.5px solid #d9cff0;
   border-radius: 12px;
   font-size: 14px;
   outline: none;
+  background: rgba(255, 255, 255, .65);
+  color: #302a42;
 }
-.login input:focus, .login select:focus { border-color: #7c3aed; }
-.login .primary { width: 100%; margin-top: 12px; padding: 13px; font-size: 15px; border-radius: 12px; }
+.login input::placeholder { color: #a89fc2; }
+.login input:focus { border-color: #7c3aed; background: #fff; }
+.login .primary { width: 100%; margin-top: 8px; padding: 13px; font-size: 15px; border-radius: 12px; }
+#lg-err { color: #d33; font-size: 12px; min-height: 16px; margin: 4px 0 0; text-align: left; }
 
 /* ============================================================
    响应式
@@ -1451,8 +1472,7 @@ mark.tag-wrong {
   .book { grid-template-columns: 1fr; }
   .book article + article { border-left: none; border-top: 1px solid #e8e0d5; }
   .profile { grid-template-columns: 1fr; }
-  .login { grid-template-columns: 1fr; }
-  .login > section:first-child { min-height: 30vh; }
+  .login { padding: 28px 16px; }
 }
 
 @keyframes float { 50% { transform: translateY(-6px); } }

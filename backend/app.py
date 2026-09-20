@@ -38,6 +38,38 @@ def health():
         return jsonify({'ok': False, 'error': str(e)}), 500
 
 
+# ── 登录 ─────────────────────────────────────────────────────────────────────
+
+@app.route('/api/login', methods=['POST'])
+def login():
+    """账号登录：student_id + password。"""
+    data = request.get_json(force=True)
+    student_id = (data.get('student_id') or '').strip()
+    password   = data.get('password') or ''
+    if not student_id or not password:
+        return jsonify({'ok': False, 'error': '请输入学号和密码'}), 400
+
+    conn = get_conn()
+    try:
+        cur = conn.cursor()
+        cur.execute("""
+            SELECT id, student_id, name, role, enroll_year
+            FROM koniponi.users
+            WHERE student_id = %s AND password = %s
+        """, (student_id, password))
+        row = cur.fetchone()
+    finally:
+        cur.close(); conn.close()
+
+    if not row:
+        return jsonify({'ok': False, 'error': '账号或密码错误'}), 401
+
+    return jsonify({'ok': True, 'user': {
+        'id': row[0], 'student_id': row[1], 'name': row[2],
+        'role': row[3], 'enroll_year': row[4],
+    }})
+
+
 # ── 单词 ─────────────────────────────────────────────────────────────────────
 
 @app.route('/api/words')
@@ -743,4 +775,4 @@ def frontend(path='index.html'):
 
 if __name__ == '__main__':
     host = os.environ.get('HOST', '127.0.0.1')  # 本地默认 127.0.0.1；服务器设 HOST=0.0.0.0 对外开放
-    app.run(host=host, port=5000, debug=(host == '127.0.0.1'))
+    app.run(host=host, port=5000, debug=(host == '127.0.0.1'), use_reloader=False)
