@@ -419,11 +419,19 @@ body {
   color: #b0a0c8;
   text-transform: uppercase;
 }
+/* 水印片假名：漫画贴纸风 — 方形字体 + 白描边 + 硬投影 */
 .world-v2 .hero-footer b {
-  font: 800 clamp(40px, 4.8vw, 68px) / 1 "Trebuchet MS", "Arial Rounded MT Bold", sans-serif;
-  letter-spacing: -3px;
-  color: #6c08a0;
-  opacity: .15;
+  font-family: "Hiragino Kaku Gothic ProN", "MS Gothic", "Yu Gothic", sans-serif;
+  font-weight: 900;
+  font-size: clamp(52px, 6vw, 86px);
+  line-height: 1.15;
+  letter-spacing: 4px;
+  color: #7c3aed;
+  opacity: .6;
+  -webkit-text-stroke: 3px rgba(255, 255, 255, .95);
+  paint-order: stroke fill;
+  text-shadow: 4px 4px 0 rgba(124, 58, 237, .25);
+  transform: scaleY(1.06);
 }
 
 /* 对话气泡 */

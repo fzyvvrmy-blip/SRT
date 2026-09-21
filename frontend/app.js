@@ -311,7 +311,7 @@ function home(){
           </div>
           <div class="hero-footer">
             <span>鴨川の飛び石を跳ねるように</span>
-            <b>KONIPONI</b>
+            <b>コニポニ</b>
           </div>
           <div id="speech">今日も、ゆっくり行こう！</div>
           <div class="conf" aria-hidden="true">${conf}</div>
@@ -424,19 +424,28 @@ function searchInline(){
       oncompositionend="_composing=false;updateDrop(this.value)"
       oninput="if(!_composing)updateDrop(this.value)"
       onkeydown="handleSearchKey(event)"
-      onblur="setTimeout(()=>{const d=document.querySelector('#searchdrop');if(d)d.remove();},150)"
+      onfocus="updateDrop(this.value)"
+      onblur="setTimeout(()=>{const d=document.querySelector('#searchdrop');if(d){d.innerHTML='';d.style.display='none';}},150)"
       autocomplete="off"
     >
-    <div id="searchdrop"></div>
+    <div class="search-drop" id="searchdrop"></div>
   </div>`;
 }
 
-/* 只刷新候选下拉，不碰输入框（防止中文输入法被打断） */
+/* 只刷新候选下拉，不碰输入框（防止中文输入法被打断）。
+   onblur 只隐藏不删除节点；若节点被 draw() 重建丢掉则在此自建。 */
 function updateDrop(val){
   S.q = val;
   SEARCH_SEL = -1;
-  const drop = document.querySelector('#searchdrop');
-  if(!drop) return;
+  let drop = document.querySelector('#searchdrop');
+  if(!drop){
+    const wrap = document.querySelector('#srchwrap');
+    if(!wrap) return;
+    drop = document.createElement('div');
+    drop.className = 'search-drop';
+    drop.id = 'searchdrop';
+    wrap.appendChild(drop);
+  }
   if(!val){ drop.innerHTML=''; drop.style.display='none'; return; }
   const cands = searchCandidates();
   if(!cands.length){ drop.innerHTML=''; drop.style.display='none'; return; }
@@ -459,8 +468,10 @@ function highlight(text, q){
 }
 function truncate(s,n){ return s&&s.length>n?s.slice(0,n)+'…':(s||''); }
 
-/* 上下键选候选，Enter 跳转，Esc 清空 */
+/* 上下键选候选，Enter 跳转，Esc 清空。
+   输入法组合中的按键（如按 Enter 确认候选词）不当作搜索操作。 */
 function handleSearchKey(e){
+  if(e.isComposing || e.keyCode === 229) return;
   const cands = searchCandidates();
   const items = document.querySelectorAll('#searchdrop .sdrop-item');
   function markSel(i){
